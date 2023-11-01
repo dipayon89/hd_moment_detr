@@ -11,7 +11,7 @@ eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
 ######## setup video+text features
-feat_root=features
+feat_root=../QVHighlights/features
 
 # video features
 v_feat_dim=0
@@ -51,4 +51,5 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --bsz ${bsz} \
 --results_root ${results_root} \
 --exp_id ${exp_id} \
+--device -1 \
 ${@:1}
