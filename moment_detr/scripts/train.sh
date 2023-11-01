@@ -51,5 +51,5 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --bsz ${bsz} \
 --results_root ${results_root} \
 --exp_id ${exp_id} \
---device 0 \
+--device -1 \
 ${@:1}

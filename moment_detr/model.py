@@ -96,16 +96,17 @@ class MomentDETR(nn.Module):
         """
         src_vid = self.input_vid_proj(src_vid)
         src_txt = self.input_txt_proj(src_txt)
-        src = torch.cat([src_vid, src_txt], dim=1)  # (bsz, L_vid+L_txt, d)
-        mask = torch.cat([src_vid_mask, src_txt_mask], dim=1).bool()  # (bsz, L_vid+L_txt)
+        # src = torch.cat([src_vid, src_txt], dim=1)  # (bsz, L_vid+L_txt, d)
+        # mask = torch.cat([src_vid_mask, src_txt_mask], dim=1).bool()  # (bsz, L_vid+L_txt)
         # TODO should we remove or use different positional embeddings to the src_txt?
         pos_vid = self.position_embed(src_vid, src_vid_mask)  # (bsz, L_vid, d)
         pos_txt = self.txt_position_embed(src_txt) if self.use_txt_pos else torch.zeros_like(src_txt)  # (bsz, L_txt, d)
         # pos_txt = torch.zeros_like(src_txt)
         # pad zeros for txt positions
-        pos = torch.cat([pos_vid, pos_txt], dim=1)
+        # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, memory = self.transformer(src, ~mask, self.query_embed.weight, pos)
+        hs, memory = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(), 
+                                      pos_vid, pos_txt, self.query_embed.weight)
         outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
         outputs_coord = self.span_embed(hs)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
