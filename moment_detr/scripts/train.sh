@@ -52,4 +52,6 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --results_root ${results_root} \
 --exp_id ${exp_id} \
 --device -1 \
+--contrastive_align_loss True \
+--contrastive_align_loss_coef 1 \
 ${@:1}
