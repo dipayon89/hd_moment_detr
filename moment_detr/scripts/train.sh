@@ -36,7 +36,7 @@ fi
 
 #### training
 bsz=32
-
+n_epoch=250
 
 PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --dset_name ${dset_name} \
@@ -49,6 +49,7 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --t_feat_dir ${t_feat_dir} \
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
+--n_epoch ${n_epoch} \
 --results_root ${results_root} \
 --exp_id ${exp_id} \
 --device -1 \
