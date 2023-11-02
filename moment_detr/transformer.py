@@ -107,7 +107,7 @@ class TransformerEncoder(nn.Module):
 
 class VTTransformer(nn.Module):
 
-    def __init__(self, d_model=512, nhead=8, num_encoder_layers=4,
+    def __init__(self, d_model=512, nhead=8, num_encoder_layers=2,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False,
                  return_intermediate_dec=False):
