@@ -81,7 +81,10 @@ class MomentDETR(nn.Module):
             self.contrastive_align_projection_txt = nn.Linear(hidden_dim, contrastive_hdim)
             self.contrastive_align_projection_vid = nn.Linear(hidden_dim, contrastive_hdim)
 
-        self.saliency_proj = nn.Linear(hidden_dim, 1)
+        # self.saliency_proj = nn.Linear(hidden_dim, 1)
+        self.saliency_proj1 = nn.Linear(hidden_dim, hidden_dim)
+        self.saliency_proj2 = nn.Linear(hidden_dim, hidden_dim)
+        self.hidden_dim = hidden_dim
         self.aux_loss = aux_loss
 
     def forward(self, src_txt, src_txt_mask, src_vid, src_vid_mask):
@@ -155,7 +158,7 @@ class MomentDETR(nn.Module):
         # print(src_vid_mask.shape, src_vid.shape, vid_mem_neg.shape, vid_mem.shape)
         out["video_mask"] = src_vid_mask
 
-        out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1)  # (bsz, L_vid)
+        # out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1)  # (bsz, L_vid)
 
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem

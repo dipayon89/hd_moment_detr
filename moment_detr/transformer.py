@@ -117,7 +117,7 @@ class VTTransformer(nn.Module):
         encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        self.encoder = VTTransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+        self.encoder = VTTransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm, hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
@@ -155,7 +155,6 @@ class VTTransformer(nn.Module):
         pos_embed_txt = pos_embed_txt.permute(1, 0, 2)  # (L, batch_size, d)
         query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (#queries, batch_size, d)
 
-        tgt = torch.zeros_like(query_embed)
         memory, pos_embed, mask = self.encoder(src_vid, src_txt,
                                                src_vid_key_padding_mask=vid_mask,
                                                src_txt_key_padding_mask=txt_mask,
@@ -166,6 +165,7 @@ class VTTransformer(nn.Module):
         mask_local = mask[:, 1:]
         pos_embed_local = pos_embed[1:]
 
+        tgt = torch.zeros_like(query_embed, device=src_vid.device)
         hs = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
                           pos=pos_embed_local, query_pos=query_embed)  # (#layers, #queries, batch_size, d)
         hs = hs.transpose(1, 2)  # (#layers, batch_size, #qeries, d)
@@ -176,7 +176,7 @@ class VTTransformer(nn.Module):
 
 class VTTransformerEncoder(nn.Module):
 
-    def __init__(self, encoder_layer, num_layers, norm=None, return_intermediate=False):
+    def __init__(self, encoder_layer, num_layers, norm=None, return_intermediate=False, hidden_dim=512):
         super().__init__()
         self.layers_vid = _get_clones(encoder_layer, num_layers)
         self.layers_txt = _get_clones(encoder_layer, num_layers)
@@ -184,6 +184,9 @@ class VTTransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
+        self.global_rep_token = torch.nn.Parameter(torch.randn(hidden_dim))
+        self.global_rep_pos = torch.nn.Parameter(torch.randn(hidden_dim))
+        self.hidden_dim = hidden_dim
 
     def forward(self, src_vid, src_txt,
                 src_vid_key_padding_mask: Optional[Tensor] = None,
@@ -206,13 +209,26 @@ class VTTransformerEncoder(nn.Module):
         pos = torch.cat([pos_vid, pos_txt], dim=0)
         src_key_padding_mask = torch.cat([src_vid_key_padding_mask, src_txt_key_padding_mask], dim=1)
 
+        # print("output.shape", output.shape)
+        # print("pos.shape", pos.shape)
+        # print("src_key_padding_mask.shape", src_key_padding_mask.shape)
+
         # for global token
-        src_key_padding_mask_ = torch.tensor([[True]]).to(src_key_padding_mask.device).repeat(src_key_padding_mask.shape[0], 1)
-        src_key_padding_mask = torch.cat([src_key_padding_mask_, src_key_padding_mask], dim=1)
+        output = output.permute(1, 0, 2)  # (batch_size, L, d)
         output_ = self.global_rep_token.reshape([1, 1, self.hidden_dim]).repeat(output.shape[0], 1, 1)
         output = torch.cat([output_, output], dim=1)
+        output = output.permute(1, 0, 2)  # (L, batch_size, d)
+        # print("new output.shape", output.shape)
+
+        pos = pos.permute(1, 0, 2)  # (batch_size, L, d)
         pos_ = self.global_rep_pos.reshape([1, 1, self.hidden_dim]).repeat(pos.shape[0], 1, 1)
         pos = torch.cat([pos_, pos], dim=1)
+        pos = pos.permute(1, 0, 2)  # (L, batch_size, d)
+        # print("new pos.shape", pos.shape)
+
+        src_key_padding_mask_ = torch.tensor([[True]]).to(src_key_padding_mask.device).repeat(src_key_padding_mask.shape[0], 1)
+        src_key_padding_mask = torch.cat([src_key_padding_mask_, src_key_padding_mask], dim=1)
+        # print("new src_key_padding_mask.shape", src_key_padding_mask.shape)
 
         for layer in self.layers_cross:
             output = layer(output, src_key_padding_mask=src_key_padding_mask, pos=pos)
