@@ -54,4 +54,5 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --device -1 \
 --contrastive_align_loss True \
 --contrastive_align_loss_coef 1 \
+--hidden_dim 512 \
 ${@:1}
