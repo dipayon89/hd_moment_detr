@@ -60,7 +60,7 @@ class Transformer(nn.Module):
         # flatten NxCxHxW to HWxNxC
         bs, l, d = src.shape
         src = src.permute(1, 0, 2)  # (L, batch_size, d)
-        pos_embed = pos_embed.permute(1, 0, 2)   # (L, batch_size, d)
+        pos_embed = pos_embed.permute(1, 0, 2)  # (L, batch_size, d)
         query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (#queries, batch_size, d)
 
         tgt = torch.zeros_like(query_embed)
@@ -103,7 +103,7 @@ class TransformerEncoder(nn.Module):
             return torch.stack(intermediate)
 
         return output
-    
+
 
 class VTTransformer(nn.Module):
 
@@ -151,22 +151,28 @@ class VTTransformer(nn.Module):
         bs, l, d = src_vid.shape
         src_vid = src_vid.permute(1, 0, 2)  # (L, batch_size, d)
         src_txt = src_txt.permute(1, 0, 2)  # (L, batch_size, d)
-        pos_embed_vid = pos_embed_vid.permute(1, 0, 2)   # (L, batch_size, d)
-        pos_embed_txt = pos_embed_txt.permute(1, 0, 2)   # (L, batch_size, d)
+        pos_embed_vid = pos_embed_vid.permute(1, 0, 2)  # (L, batch_size, d)
+        pos_embed_txt = pos_embed_txt.permute(1, 0, 2)  # (L, batch_size, d)
         query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (#queries, batch_size, d)
 
         tgt = torch.zeros_like(query_embed)
-        memory, pos_embed, mask = self.encoder(src_vid, src_txt, 
-                              src_vid_key_padding_mask=vid_mask, 
-                              src_txt_key_padding_mask=txt_mask,
-                              pos_vid=pos_embed_vid,
-                              pos_txt=pos_embed_txt)  # (L, batch_size, d)
-        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
-                          pos=pos_embed, query_pos=query_embed)  # (#layers, #queries, batch_size, d)
+        memory, pos_embed, mask = self.encoder(src_vid, src_txt,
+                                               src_vid_key_padding_mask=vid_mask,
+                                               src_txt_key_padding_mask=txt_mask,
+                                               pos_vid=pos_embed_vid,
+                                               pos_txt=pos_embed_txt)  # (L, batch_size, d)
+
+        memory_global, memory_local = memory[0], memory[1:]
+        mask_local = mask[:, 1:]
+        pos_embed_local = pos_embed[1:]
+
+        hs = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
+                          pos=pos_embed_local, query_pos=query_embed)  # (#layers, #queries, batch_size, d)
         hs = hs.transpose(1, 2)  # (#layers, batch_size, #qeries, d)
         # memory = memory.permute(1, 2, 0)  # (batch_size, d, L)
-        memory = memory.transpose(0, 1)  # (batch_size, L, d)
-        return hs, memory
+        memory = memory_local.transpose(0, 1)  # (batch_size, L, d)
+        return hs, memory, memory_global
+
 
 class VTTransformerEncoder(nn.Module):
 
@@ -174,7 +180,7 @@ class VTTransformerEncoder(nn.Module):
         super().__init__()
         self.layers_vid = _get_clones(encoder_layer, num_layers)
         self.layers_txt = _get_clones(encoder_layer, num_layers)
-        self.layers_cross = _get_clones(encoder_layer, num_layers)
+        self.layers_cross = _get_clones(encoder_layer, num_layers * 2)
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
@@ -184,7 +190,7 @@ class VTTransformerEncoder(nn.Module):
                 src_txt_key_padding_mask: Optional[Tensor] = None,
                 pos_vid: Optional[Tensor] = None,
                 pos_txt: Optional[Tensor] = None):
-        
+
         output_vid = src_vid
         output_txt = src_txt
 
@@ -199,7 +205,15 @@ class VTTransformerEncoder(nn.Module):
         output = torch.cat([output_vid, output_txt], dim=0)
         pos = torch.cat([pos_vid, pos_txt], dim=0)
         src_key_padding_mask = torch.cat([src_vid_key_padding_mask, src_txt_key_padding_mask], dim=1)
-        
+
+        # for global token
+        src_key_padding_mask_ = torch.tensor([[True]]).to(src_key_padding_mask.device).repeat(src_key_padding_mask.shape[0], 1)
+        src_key_padding_mask = torch.cat([src_key_padding_mask_, src_key_padding_mask], dim=1)
+        output_ = self.global_rep_token.reshape([1, 1, self.hidden_dim]).repeat(output.shape[0], 1, 1)
+        output = torch.cat([output_, output], dim=1)
+        pos_ = self.global_rep_pos.reshape([1, 1, self.hidden_dim]).repeat(pos.shape[0], 1, 1)
+        pos = torch.cat([pos_, pos], dim=1)
+
         for layer in self.layers_cross:
             output = layer(output, src_key_padding_mask=src_key_padding_mask, pos=pos)
             if self.return_intermediate:
@@ -377,135 +391,6 @@ class TransformerEncoderLayer(nn.Module):
         return self.forward_post(src, src_mask, src_key_padding_mask, pos)
 
 
-class VTTransformerEncoderLayer(nn.Module):
-
-    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
-                 activation="relu", normalize_before=False):
-        super().__init__()
-        # for video video
-        self.self_attn_vid = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.dropout_vid = nn.Dropout(dropout)
-        self.norm_vid = nn.LayerNorm(d_model)
-        
-        #for text query
-        self.self_attn_txt = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.linear_txt = nn.Linear(d_model, dim_feedforward)
-        self.dropout_txt = nn.Dropout(dropout)
-        self.norm_txt = nn.LayerNorm(d_model)
-
-        
-        # for cross attension
-        self.cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
-
-        self.activation = _get_activation_fn(activation)
-        self.normalize_before = normalize_before
-
-    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-        return tensor if pos is None else tensor + pos
-
-    def forward_post(self,
-                    src_vid,
-                    src_txt,
-                    src_vid_mask: Optional[Tensor] = None,
-                    src_vid_key_padding_mask: Optional[Tensor] = None,
-                    pos_vid: Optional[Tensor] = None,
-                    src_txt_mask: Optional[Tensor] = None,
-                    src_txt_key_padding_mask: Optional[Tensor] = None,
-                    pos_txt: Optional[Tensor] = None,
-                    src_mask: Optional[Tensor] = None,
-                    src_key_padding_mask: Optional[Tensor] = None,
-                    pos: Optional[Tensor] = None):
-        # apply attension on video data
-        q_vid = k_vid = self.with_pos_embed(src_vid, pos_vid)
-        src2_vid = self.self_attn_vid(q_vid, k_vid, value=src_vid, attn_mask=src_vid_mask,
-                              key_padding_mask=src_vid_key_padding_mask)[0]
-        src_vid = src_vid + self.dropout_vid(src2_vid)
-        src_vid = self.norm_vid(src_vid)
-        
-        # apply attension on text data
-        q_txt = k_txt = self.with_pos_embed(src_txt, pos_txt)
-        src2_txt = self.self_attn_txt(q_txt, k_txt, value=src_txt, attn_mask=src_txt_mask,
-                              key_padding_mask=src_txt_key_padding_mask)[0]
-        src_txt = src_txt + self.dropout_txt(src2_txt)
-        src_txt = self.norm_txt(src_txt)
-
-        # apply cross attension on video and text
-        src = torch.cat([src_vid, src_txt], dim=1)
-        q = k = self.with_pos_embed(src, pos)
-        src2 = self.cross_attn(q, k, value=src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
-        src = src + self.dropout1(src2)
-        src = self.norm1(src)
-        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        src = src + self.dropout2(src2)
-        src = self.norm2(src)
-        return src
-
-    def forward_pre(self, src_vid, src_txt,
-                    src_vid_mask: Optional[Tensor] = None,
-                    src_vid_key_padding_mask: Optional[Tensor] = None,
-                    pos_vid: Optional[Tensor] = None,
-                    src_txt_mask: Optional[Tensor] = None,
-                    src_txt_key_padding_mask: Optional[Tensor] = None,
-                    pos_txt: Optional[Tensor] = None,
-                    src_mask: Optional[Tensor] = None,
-                    src_key_padding_mask: Optional[Tensor] = None,
-                    pos: Optional[Tensor] = None):
-        # apply attension on video data
-        src2_vid = self.norm_vid(src_vid)
-        q_vid = k_vid = self.with_pos_embed(src2_vid, pos_vid)
-        src2_vid = self.self_attn_vid(q_vid, k_vid, value=src2, attn_mask=src_vid_mask,
-                              key_padding_mask=src_vid_key_padding_mask)[0]
-        src_vid = src_vid + self.dropout_vid(src2_vid)
-
-        # apply attension on text data
-        src2_txt = self.norm_txt(src_txt)
-        q_txt = k_txt = self.with_pos_embed(src2_txt, pos_txt)
-        src2_txt = self.self_attn_txt(q_txt, k_txt, value=src2, attn_mask=src_txt_mask,
-                              key_padding_mask=src_txt_key_padding_mask)[0]
-        src_txt = src_txt + self.dropout_txt(src2_txt)
-
-        # apply cross attension on video and text
-        src2 = self.norm1(torch.cat([src_vid, src_txt], dim=1))  # (bsz, L_vid+L_txt, d)
-        q = k = self.with_pos_embed(src2, pos)
-        src2 = self.cross_attn(q, k, value=src2, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
-        src = src + self.dropout1(src2)
-        src2 = self.norm2(src)
-        src2 = self.linear2(self.dropout(self.activation(self.linear1(src2))))
-        src= src + self.dropout2(src2)
-        return src
-
-    def forward(self, src_vid, src_txt,
-                    src_vid_mask: Optional[Tensor] = None,
-                    src_vid_key_padding_mask: Optional[Tensor] = None,
-                    pos_vid: Optional[Tensor] = None,
-                    src_txt_mask: Optional[Tensor] = None,
-                    src_txt_key_padding_mask: Optional[Tensor] = None,
-                    pos_txt: Optional[Tensor] = None,
-                    src_mask: Optional[Tensor] = None,
-                    src_key_padding_mask: Optional[Tensor] = None,
-                    pos: Optional[Tensor] = None):
-        if self.normalize_before:
-            return self.forward_pre(src_vid, src_txt, src_vid_mask, src_vid_key_padding_mask, 
-                                    pos_vid, src_txt_mask, src_txt_key_padding_mask, pos_txt, 
-                                    src_mask, src_key_padding_mask, pos)
-        return self.forward_post(src_vid, src_txt, src_vid_mask, src_vid_key_padding_mask, 
-                                    pos_vid, src_txt_mask, src_txt_key_padding_mask, pos_txt, 
-                                    src_mask, src_key_padding_mask, pos)
-
-
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
@@ -593,6 +478,7 @@ class TransformerDecoderLayer(nn.Module):
 
 class TransformerDecoderLayerThin(nn.Module):
     """removed intermediate layer"""
+
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False):
         super().__init__()
@@ -678,7 +564,6 @@ class TransformerDecoderLayerThin(nn.Module):
                                     tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
         return self.forward_post(tgt, memory, tgt_mask, memory_mask,
                                  tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos)
-
 
 
 def _get_clones(module, N):

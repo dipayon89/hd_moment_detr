@@ -2,6 +2,7 @@
 """
 DETR model and criterion classes.
 """
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -57,17 +58,23 @@ class MomentDETR(nn.Module):
         # self.background_thd = background_thd
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         relu_args = [True] * 3
-        relu_args[n_input_proj-1] = False
+        relu_args[n_input_proj - 1] = False
         self.input_txt_proj = nn.Sequential(*[
-            LinearLayer(txt_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[0]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[1]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[2])
-        ][:n_input_proj])
+                                                 LinearLayer(txt_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[0]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[1]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[2])
+                                             ][:n_input_proj])
         self.input_vid_proj = nn.Sequential(*[
-            LinearLayer(vid_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[0]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[1]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[2])
-        ][:n_input_proj])
+                                                 LinearLayer(vid_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[0]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[1]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[2])
+                                             ][:n_input_proj])
         self.contrastive_align_loss = contrastive_align_loss
         if contrastive_align_loss:
             self.contrastive_align_projection_query = nn.Linear(hidden_dim, contrastive_hdim)
@@ -105,8 +112,8 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, memory = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(), 
-                                      pos_vid, pos_txt, self.query_embed.weight)
+        hs, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(),
+                                                     pos_vid, pos_txt, self.query_embed.weight)
         outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
         outputs_coord = self.span_embed(hs)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
@@ -124,6 +131,29 @@ class MomentDETR(nn.Module):
                 proj_txt_mem=proj_txt_mem,
                 proj_vid_mem=proj_vid_mem
             ))
+
+        ### Neg Pairs ###
+        src_txt_neg = torch.cat([src_txt[1:], src_txt[0:1]], dim=0)
+        src_txt_mask_neg = torch.cat([src_txt_mask[1:], src_txt_mask[0:1]], dim=0)
+
+        pos_vid_neg = pos_vid.clone()
+        pos_txt_neg = pos_txt.clone()
+
+        _, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
+                                                            ~src_txt_mask_neg.bool(),
+                                                            pos_vid_neg, pos_txt_neg, self.query_embed.weight)
+        vid_mem_neg = memory_neg[:, :src_vid.shape[1]]
+
+        out["saliency_scores"] = (
+                torch.sum(self.saliency_proj1(vid_mem) * self.saliency_proj2(memory_global).unsqueeze(1),
+                          dim=-1) / np.sqrt(self.hidden_dim))
+
+        out["saliency_scores_neg"] = (
+                torch.sum(self.saliency_proj1(vid_mem_neg) * self.saliency_proj2(memory_global_neg).unsqueeze(1),
+                          dim=-1) / np.sqrt(self.hidden_dim))
+
+        # print(src_vid_mask.shape, src_vid.shape, vid_mem_neg.shape, vid_mem.shape)
+        out["video_mask"] = src_vid_mask
 
         out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1)  # (bsz, L_vid)
 
@@ -250,7 +280,79 @@ class SetCriterion(nn.Module):
         neg_scores = torch.stack(
             [saliency_scores[batch_indices, neg_indices[:, col_idx]] for col_idx in range(num_pairs)], dim=1)
         loss_saliency = torch.clamp(self.saliency_margin + neg_scores - pos_scores, min=0).sum() \
-            / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
+                        / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
+        return {"loss_saliency": loss_saliency}
+
+    def contrastive_loss_saliency(self, outputs, targets, indices, log=True):
+        """higher scores for positive clips"""
+        if "saliency_pos_labels" not in targets:
+            return {"loss_saliency": 0}
+
+        vid_token_mask = outputs["video_mask"]
+
+        # Neg pair loss
+        saliency_scores_neg = outputs["saliency_scores_neg"].clone()  # (N, L)
+        # loss_neg_pair = torch.sigmoid(saliency_scores_neg).mean()
+
+        loss_neg_pair = (- torch.log(1. - torch.sigmoid(saliency_scores_neg)) * vid_token_mask).sum(dim=1).mean()
+
+        saliency_scores = outputs["saliency_scores"].clone()  # (N, L)
+        saliency_contrast_label = targets["saliency_all_labels"]
+
+        saliency_scores = torch.cat([saliency_scores, saliency_scores_neg], dim=1)
+        saliency_contrast_label = torch.cat([saliency_contrast_label, torch.zeros_like(saliency_contrast_label)], dim=1)
+
+        vid_token_mask = vid_token_mask.repeat([1, 2])
+        saliency_scores = vid_token_mask * saliency_scores + (1. - vid_token_mask) * -1e+3
+
+        tau = 0.5
+        loss_rank_contrastive = 0.
+
+        # for rand_idx in range(1, 13, 3):
+        #     # 1, 4, 7, 10 --> 5 stages
+        for rand_idx in range(1, 12):
+            drop_mask = ~(saliency_contrast_label > 100)  # no drop
+            pos_mask = (saliency_contrast_label >= rand_idx)  # positive when equal or higher than rand_idx
+
+            if torch.sum(pos_mask) == 0:  # no positive sample
+                continue
+            else:
+                batch_drop_mask = torch.sum(pos_mask, dim=1) > 0  # negative sample indicator
+
+            # drop higher ranks
+            cur_saliency_scores = saliency_scores * drop_mask / tau + ~drop_mask * -1e+3
+
+            # numerical stability
+            logits = cur_saliency_scores - torch.max(cur_saliency_scores, dim=1, keepdim=True)[0]
+
+            # softmax
+            exp_logits = torch.exp(logits)
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + 1e-6)
+
+            mean_log_prob_pos = (pos_mask * log_prob * vid_token_mask).sum(1) / (pos_mask.sum(1) + 1e-6)
+
+            loss = - mean_log_prob_pos * batch_drop_mask
+
+            loss_rank_contrastive = loss_rank_contrastive + loss.mean()
+
+        loss_rank_contrastive = loss_rank_contrastive / 12
+
+        saliency_scores = outputs["saliency_scores"]  # (N, L)
+        pos_indices = targets["saliency_pos_labels"]  # (N, #pairs)
+        neg_indices = targets["saliency_neg_labels"]  # (N, #pairs)
+        num_pairs = pos_indices.shape[1]  # typically 2 or 4
+        batch_indices = torch.arange(len(saliency_scores)).to(saliency_scores.device)
+        pos_scores = torch.stack(
+            [saliency_scores[batch_indices, pos_indices[:, col_idx]] for col_idx in range(num_pairs)], dim=1)
+        neg_scores = torch.stack(
+            [saliency_scores[batch_indices, neg_indices[:, col_idx]] for col_idx in range(num_pairs)], dim=1)
+        loss_saliency = torch.clamp(self.saliency_margin + neg_scores - pos_scores, min=0).sum() \
+                        / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
+
+        # print(loss_saliency, loss_rank_contrastive)
+        # loss_saliency = loss_saliency + loss_rank_contrastive
+        loss_saliency = loss_saliency + loss_rank_contrastive + loss_neg_pair
+        # loss_saliency = loss_rank_contrastive
         return {"loss_saliency": loss_saliency}
 
     def loss_contrastive_align(self, outputs, targets, indices, log=True):
@@ -310,7 +412,8 @@ class SetCriterion(nn.Module):
             "spans": self.loss_spans,
             "labels": self.loss_labels,
             "contrastive_align": self.loss_contrastive_align,
-            "saliency": self.loss_saliency,
+            # "saliency": self.loss_saliency,
+            "saliency": self.contrastive_loss_saliency,
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, **kwargs)
@@ -418,7 +521,7 @@ def build_model(args):
         n_input_proj=args.n_input_proj,
     )
     model.to(device)
-    
+
     matcher = build_matcher(args)
     weight_dict = {"loss_span": args.span_loss_coef,
                    "loss_giou": args.giou_loss_coef,
