@@ -417,7 +417,8 @@ def build_model(args):
         use_txt_pos=args.use_txt_pos,
         n_input_proj=args.n_input_proj,
     )
-
+    model.to(device)
+    
     matcher = build_matcher(args)
     weight_dict = {"loss_span": args.span_loss_coef,
                    "loss_giou": args.giou_loss_coef,
