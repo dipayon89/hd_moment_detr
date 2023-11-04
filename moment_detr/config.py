@@ -21,7 +21,7 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", type=str, choices=["hl"])
+        parser.add_argument("--dset_name", default="hl", type=str, choices=["hl"])
         parser.add_argument("--eval_split_name", type=str, default="val",
                             help="should match keys in video_duration_idx_path, must set for VCMR")
         parser.add_argument("--debug", action="store_true",
@@ -31,7 +31,7 @@ class BaseOptions(object):
                                  "Use small portion for debug purposes. Note this is different from --debug, "
                                  "which works by breaking the loops, typically they are not used together.")
         parser.add_argument("--results_root", type=str, default="results")
-        parser.add_argument("--exp_id", type=str, default=None, help="id of this run, required at training")
+        parser.add_argument("--exp_id", type=str, default="exp", help="id of this run, required at training")
         parser.add_argument("--seed", type=int, default=2018, help="random seed")
         parser.add_argument("--device", type=int, default=0, help="0 cuda, -1 cpu")
         parser.add_argument("--num_workers", type=int, default=4,
@@ -65,17 +65,20 @@ class BaseOptions(object):
         parser.add_argument("--clip_length", type=int, default=2)
         parser.add_argument("--max_windows", type=int, default=5)
 
-        parser.add_argument("--train_path", type=str, default=None)
-        parser.add_argument("--eval_path", type=str, default=None,
+        parser.add_argument("--train_path", type=str, default="data/highlight_train_release.jsonl")
+        parser.add_argument("--eval_path", type=str, default="data/highlight_val_release.jsonl",
                             help="Evaluating during training, for Dev set. If None, will only do training, ")
         parser.add_argument("--no_norm_vfeat", action="store_true", help="Do not do normalize video feat")
         parser.add_argument("--no_norm_tfeat", action="store_true", help="Do not do normalize text feat")
         parser.add_argument("--v_feat_dirs", type=str, nargs="+",
+                            default="../QVHighlights/features/clip_features",
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
-        parser.add_argument("--t_feat_dir", type=str, help="text/query feature dir")
-        parser.add_argument("--v_feat_dim", type=int, help="video feature dim")
-        parser.add_argument("--t_feat_dim", type=int, help="text/query feature dim")
+        parser.add_argument("--t_feat_dir", type=str,
+                            default="../QVHighlights/features/clip_text_features/",
+                            help="text/query feature dir")
+        parser.add_argument("--v_feat_dim", type=int, default=512, help="video feature dim")
+        parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
         parser.add_argument("--ctx_mode", type=str, default="video_tef")
 
         # Model config
