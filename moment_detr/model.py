@@ -15,6 +15,14 @@ from moment_detr.position_encoding import build_position_encoding
 from moment_detr.misc import accuracy
 
 
+
+def inverse_sigmoid(x, eps=1e-3):
+    x = x.clamp(min=0, max=1)
+    x1 = x.clamp(min=eps)
+    x2 = (1 - x).clamp(min=eps)
+    return torch.log(x1 / x2)
+
+
 class MomentDETR(nn.Module):
     """ This is the Moment-DETR module that performs moment localization. """
 
@@ -56,7 +64,7 @@ class MomentDETR(nn.Module):
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
         # self.background_thd = background_thd
-        self.query_embed = nn.Embedding(num_queries, hidden_dim)
+        self.query_embed = nn.Embedding(num_queries, 2)
         relu_args = [True] * 3
         relu_args[n_input_proj - 1] = False
         self.input_txt_proj = nn.Sequential(*[
@@ -115,10 +123,12 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(),
+        hs, reference, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(),
                                                      pos_vid, pos_txt, self.query_embed.weight)
         outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
-        outputs_coord = self.span_embed(hs)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        reference_before_sigmoid = inverse_sigmoid(reference)
+        tmp = self.span_embed(hs)
+        outputs_coord = tmp + reference_before_sigmoid
         if self.span_loss_type == "l1":
             outputs_coord = outputs_coord.sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
@@ -142,7 +152,7 @@ class MomentDETR(nn.Module):
         pos_vid_neg = pos_vid.clone()
         pos_txt_neg = pos_txt.clone()
 
-        _, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
+        _, _, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
                                                             ~src_txt_mask_neg.bool(),
                                                             pos_vid_neg, pos_txt_neg, self.query_embed.weight)
         vid_mem_neg = memory_neg[:, :src_vid.shape[1]]
