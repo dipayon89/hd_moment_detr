@@ -795,24 +795,24 @@ class CrossAttentionLayer(nn.Module):
         out1 = self.cross_attn_1(query=src1, key=k, value=v, attn_mask=src2_mask,
                                  key_padding_mask=src2_key_padding_mask)[0]
         out1 = self.norm1(self.linear1(self.dropout1(out1)))
-        print("out1.shape", out1.shape)
+        # print("out1.shape", out1.shape)
         out2 = self.self_attn(query=out1, key=out1, value=out1, attn_mask=src2_mask,
                               key_padding_mask=src1_key_padding_mask)[0]
         out2 = self.dropout2(out2)
 
-        print("out2.shape", out2.shape)
+        # print("out2.shape", out2.shape)
         out3 = self.norm2(self.pooling(torch.cat([out1, out2], dim=2)))
 
-        print("out3.shape", out3.shape)
+        # print("out3.shape", out3.shape)
         k = v = self.with_pos_embed(src1, pos1)
 
         out = self.cross_attn_2(query=out3, key=k, value=v, attn_mask=src1_mask,
                                 key_padding_mask=src1_key_padding_mask)[0]
-        print("out.shape", out.shape)
+        # print("out.shape", out.shape)
         out1 = self.linear3(self.dropout3(self.activation(self.linear2(out))))
         out = out + self.dropout4(out1)
         out = self.norm3(out)
-        print("out.shape", out.shape)
+        # print("out.shape", out.shape)
         return out
 
 
