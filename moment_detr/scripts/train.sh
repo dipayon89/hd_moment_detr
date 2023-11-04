@@ -52,6 +52,6 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --n_epoch ${n_epoch} \
 --results_root ${results_root} \
 --exp_id ${exp_id} \
---device -1 \
+--device 0 \
 --hidden_dim 256 \
 ${@:1}
