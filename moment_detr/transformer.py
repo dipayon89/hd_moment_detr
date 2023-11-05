@@ -598,8 +598,9 @@ class VTCrossTransformer(nn.Module):
         super().__init__()
 
         # TransformerEncoderLayerThin
-        seft_atten_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
-                                                   dropout, activation, normalize_before)
+        # seft_atten_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
+        #                                            dropout, activation, normalize_before)
+        seft_atten_layer = PoolformerLayer(d_model, dim_feedforward, dropout, activation)
         cross_atten_layer = CrossAttentionLayer(d_model, nhead,
                                                 dropout, activation)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
@@ -723,11 +724,17 @@ class VTCrossTransformerEncoder(nn.Module):
 
         intermediate = []
 
+        # for layer in self.layers_vid:
+        #     output_vid = layer(output_vid, src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
+        #
+        # for layer in self.layers_txt:
+        #     output_txt = layer(output_txt, src_key_padding_mask=src_txt_key_padding_mask, pos=pos_txt)
+
         for layer in self.layers_vid:
-            output_vid = layer(output_vid, src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
+            output_vid = layer(output_vid, pos=pos_vid)
 
         for layer in self.layers_txt:
-            output_txt = layer(output_txt, src_key_padding_mask=src_txt_key_padding_mask, pos=pos_txt)
+            output_txt = layer(output_txt, pos=pos_txt)
 
         # output = torch.cat([output_vid, output_txt], dim=0)
         # pos = torch.cat([pos_vid, pos_txt], dim=0)
