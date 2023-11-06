@@ -788,7 +788,7 @@ class PoolformerLayer(nn.Module):
 
 
 class CrossAttentionLayer(nn.Module):
-    def __init__(self, d_model, nhead, dropout=0.1,
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu"):
         super().__init__()
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
@@ -796,8 +796,8 @@ class CrossAttentionLayer(nn.Module):
         self.cross_attn_2 = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
         self.linear1 = nn.Linear(d_model, d_model)
-        self.linear2 = nn.Linear(d_model, d_model)
-        self.linear3 = nn.Linear(d_model, d_model)
+        self.linear2 = nn.Linear(d_model, dim_feedforward)
+        self.linear3 = nn.Linear(dim_feedforward, d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
