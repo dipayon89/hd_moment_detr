@@ -601,8 +601,8 @@ class VTCrossTransformer(nn.Module):
         # seft_atten_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
         #                                            dropout, activation, normalize_before)
         seft_atten_layer = PoolformerLayer(d_model, dim_feedforward, dropout, activation)
-        cross_atten_layer = CrossAttentionLayer(d_model, nhead,
-                                                dropout, activation)
+        cross_atten_layer = CrossAttentionLayer(d_model, nhead, dim_feedforward,
+                                                dropout=dropout, activation=activation)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder = VTCrossTransformerEncoder(seft_atten_layer, cross_atten_layer, num_encoder_layers, encoder_norm,
                                                  hidden_dim=d_model)
