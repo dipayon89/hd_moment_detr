@@ -1,16 +1,7 @@
 # Moment-DETR
 
-[QVHighlights: Detecting Moments and Highlights in Videos via Natural Language Queries](https://arxiv.org/abs/2107.09609), NeurIPS 2021
-
-[Jie Lei](http://www.cs.unc.edu/~jielei/), 
-[Tamara L. Berg](http://tamaraberg.com/), [Mohit Bansal](http://www.cs.unc.edu/~mbansal/)
-
 This repo contains a copy of QVHighlights dataset for moment retrieval and highlight detections. For details, please check [data/README.md](data/README.md)
-This repo also hosts the Moment-DETR model (see overview below), a new model that predicts moment coordinates and saliency scores end-to-end based on a given text query. This released code supports pre-training, fine-tuning, and evaluation of Moment-DETR on the QVHighlights datasets. It also supports running prediction on your own raw videos and text queries. 
-
-
-![model](./res/model_overview.png)
-
+This repo also hosts the Moment-DETR model (see overview below), a new model that predicts moment coordinates and saliency scores end-to-end based on a given text query. This released code supports pre-training, fine-tuning, and evaluation of Moment-DETR on the QVHighlights datasets. It also supports running prediction on your own raw videos and text queries.
 
 ## Table of Contents
 
@@ -33,14 +24,14 @@ This repo also hosts the Moment-DETR model (see overview below), a new model tha
 0. Clone this repo
 
 ```
-git clone https://github.com/jayleicn/moment_detr.git
-cd moment_detr
+git clone https://github.com/dipayon89/hd_moment_detr.git
+cd hd_moment_detr
 ```
 
 1. Prepare feature files
 
 Download [moment_detr_features.tar.gz](https://drive.google.com/file/d/1Hiln02F1NEpoW8-iPZurRyi-47-W2_B9/view?usp=sharing) (8GB), 
-extract it under project root directory:
+extract it under `../QVHighlights/` directory:
 ```
 tar -xf path/to/moment_detr_features.tar.gz
 ```
@@ -148,8 +139,7 @@ To run predictions on your own videos and queries, please take a look at the `ru
 
 
 ## Acknowledgement
-We thank [Linjie Li](https://scholar.google.com/citations?user=WR875gYAAAAJ&hl=en) for the helpful discussions.
-This code is based on [detr](https://github.com/facebookresearch/detr) and [TVRetrieval XML](https://github.com/jayleicn/TVRetrieval). We used resources from [mdetr](https://github.com/ashkamath/mdetr), [MMAction2](https://github.com/open-mmlab/mmaction2), [CLIP](https://github.com/openai/CLIP), [SlowFast](https://github.com/facebookresearch/SlowFast) and [HERO_Video_Feature_Extractor](https://github.com/linjieli222/HERO_Video_Feature_Extractor). We thank the authors for their awesome open-source contributions. 
+This code is based on [moment-detr](https://github.com/jayleicn/moment_detr.git), [QD-DETR](https://github.com/wjun0830/QD-DETR), [detr](https://github.com/facebookresearch/detr) and [TVRetrieval XML](https://github.com/jayleicn/TVRetrieval). We used resources from [mdetr](https://github.com/ashkamath/mdetr), [MMAction2](https://github.com/open-mmlab/mmaction2), [CLIP](https://github.com/openai/CLIP), [SlowFast](https://github.com/facebookresearch/SlowFast) and [HERO_Video_Feature_Extractor](https://github.com/linjieli222/HERO_Video_Feature_Extractor). We thank the authors for their awesome open-source contributions. 
 
 ## LICENSE
 The annotation files are under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) license, see [./data/LICENSE](data/LICENSE). All the code are under [MIT](https://opensource.org/licenses/MIT) license, see [LICENSE](./LICENSE).
