@@ -682,8 +682,8 @@ class VTCrossTransformerEncoder(nn.Module):
     def __init__(self, self_attn_layer, cross_attn_layer, encoder, num_layers=2, norm=None, return_intermediate=False,
                  hidden_dim=512):
         super().__init__()
-        self.layers_vid = _get_clones(self_attn_layer, num_layers)
-        self.layers_txt = _get_clones(self_attn_layer, num_layers)
+        self.layers_vid = _get_clones(self_attn_layer, 2)
+        self.layers_txt = _get_clones(self_attn_layer, 2)
         self.layers_cross = cross_attn_layer
         self.layers_encoder = _get_clones(encoder, num_layers)
         self.num_layers = num_layers
