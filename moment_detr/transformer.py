@@ -760,7 +760,8 @@ class PoolformerLayer(nn.Module):
     def __init__(self, d_model, dim_feedforward=2048, dropout=0.1,
                  activation="relu"):
         super().__init__()
-        self.pooling_layer = nn.AvgPool1d(3, stride=1, padding=1)
+        # self.pooling_layer = nn.AvgPool1d(3, stride=1, padding=1)
+        self.pooling_layer = nn.MaxPool1d(3, stride=1, padding=1)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
