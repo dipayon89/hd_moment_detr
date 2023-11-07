@@ -598,13 +598,13 @@ class VTCrossTransformer(nn.Module):
         super().__init__()
 
         # TransformerEncoderLayerThin
-        # seft_atten_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
-        #                                            dropout, activation, normalize_before)
+        encoder = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
+                                                    dropout, activation, normalize_before)
         seft_atten_layer = PoolformerLayer(d_model, dim_feedforward, dropout, activation)
         cross_atten_layer = CrossAttentionLayer(d_model, nhead, dim_feedforward,
                                                 dropout=dropout, activation=activation)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        self.encoder = VTCrossTransformerEncoder(seft_atten_layer, cross_atten_layer, num_encoder_layers, encoder_norm,
+        self.encoder = VTCrossTransformerEncoder(seft_atten_layer, cross_atten_layer, encoder, num_encoder_layers, encoder_norm,
                                                  hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
@@ -679,12 +679,13 @@ class VTCrossTransformer(nn.Module):
 
 class VTCrossTransformerEncoder(nn.Module):
 
-    def __init__(self, self_attn_layer, cross_attn_layer, num_layers=2, norm=None, return_intermediate=False,
+    def __init__(self, self_attn_layer, cross_attn_layer, encoder, num_layers=2, norm=None, return_intermediate=False,
                  hidden_dim=512):
         super().__init__()
         self.layers_vid = _get_clones(self_attn_layer, num_layers)
         self.layers_txt = _get_clones(self_attn_layer, num_layers)
         self.layers_cross = cross_attn_layer
+        self.layers_encoder = _get_clones(encoder, num_layers)
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
@@ -746,6 +747,12 @@ class VTCrossTransformerEncoder(nn.Module):
         if self.return_intermediate:
             intermediate.append(output)
 
+        for layer in self.layers_encoder:
+            output = layer(output,
+                           src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
+            if self.return_intermediate:
+                intermediate.append(output)
+
         if self.norm is not None:
             output = self.norm(output)
 
@@ -760,8 +767,8 @@ class PoolformerLayer(nn.Module):
     def __init__(self, d_model, dim_feedforward=2048, dropout=0.1,
                  activation="relu"):
         super().__init__()
-        # self.pooling_layer = nn.AvgPool1d(3, stride=1, padding=1)
-        self.pooling_layer = nn.MaxPool1d(3, stride=1, padding=1)
+        self.pooling_layer = nn.AvgPool1d(3, stride=1, padding=1)
+        # self.pooling_layer = nn.MaxPool1d(3, stride=1, padding=1)
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
