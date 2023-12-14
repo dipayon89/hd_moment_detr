@@ -47,6 +47,24 @@ class ClipFeatureExtractor:
                 text_features.append(batch_last_hidden_states[j, :valid_len])
         return text_features  # List([L_j, d]) torch tensor
 
+    @torch.no_grad()
+    def encode_text_query(self, text_list, bsz=60):
+        n_text = len(text_list)
+        n_batch = int(math.ceil(n_text / bsz))
+        text_features = []
+        for i in range(n_batch):
+            st_idx = i * bsz
+            ed_idx = (i+1) * bsz
+            encoded_texts = self.tokenizer(text_list[st_idx:ed_idx], context_length=77).to(self.device)
+            output = self.clip_extractor.encode_text(encoded_texts)
+            valid_lengths = (encoded_texts != 0).sum(1).tolist()
+            # print(valid_lengths)
+            batch_last_hidden_states = output["last_hidden_state"]
+            batch_pooler_output = output["pooler_output"]
+            for j, valid_len in enumerate(valid_lengths):
+                text_features.append(dict(last_hidden_state=batch_last_hidden_states[j, :valid_len], pooler_output=batch_pooler_output[j]))
+        return text_features  # List([L_j, d]) torch tensor
+
 
 def convert_to_float(frac_str):
     try:

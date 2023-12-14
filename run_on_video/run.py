@@ -90,11 +90,11 @@ class MomentDETRPredictor:
 def run_example():
     # load example data
     from utils.basic_utils import load_jsonl
-    video_path = "run_on_video/example/RoripwjYFp8_60.0_210.0.mp4"
-    query_path = "run_on_video/example/queries.jsonl"
+    video_path = "example/RoripwjYFp8_60.0_210.0.mp4"
+    query_path = "example/queries.jsonl"
     queries = load_jsonl(query_path)
     query_text_list = [e["query"] for e in queries]
-    ckpt_path = "run_on_video/moment_detr_ckpt/model_best.ckpt"
+    ckpt_path = "moment_detr_ckpt/model_best.ckpt"
 
     # run predictions
     print("Build models...")

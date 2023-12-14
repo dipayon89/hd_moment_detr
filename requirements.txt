@@ -78,3 +78,5 @@ wcwidth
 Werkzeug
 wget
 zipp
+ftfy
+openai
