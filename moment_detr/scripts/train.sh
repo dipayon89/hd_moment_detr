@@ -3,7 +3,7 @@ ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
 results_root=results
-exp_id=exp
+exp_id=exp_paraphrased
 
 ######## data paths
 #train_path=data/highlight_train_release.jsonl

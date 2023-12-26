@@ -14,8 +14,8 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
-from torch.nn import GroupNorm, MultiheadAttention
 
+from .attention import MultiheadAttention
 
 class Transformer(nn.Module):
 
@@ -1021,7 +1021,6 @@ class VTTransformerDecoderLayer(nn.Module):
         self.ca_v_proj = nn.Linear(d_model, d_model)
         self.ca_qpos_sine_proj = nn.Linear(d_model, d_model)
         self.cross_attn = MultiheadAttention(d_model * 2, nhead, dropout=dropout, vdim=d_model)
-        self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
 
         self.nhead = nhead
         self.rm_self_attn_decoder = rm_self_attn_decoder
@@ -1106,18 +1105,12 @@ class VTTransformerDecoderLayer(nn.Module):
         k_pos = k_pos.view(hw, bs, self.nhead, n_model // self.nhead)
         k = torch.cat([k, k_pos], dim=3).view(hw, bs, n_model * 2)
 
-        # print("q.shape", q.shape)
-        # print("k.shape", k.shape)
-        # print("v.shape", v.shape)
-
         tgt2 = self.cross_attn(query=q,
                                key=k,
                                value=v, attn_mask=memory_mask,
                                key_padding_mask=memory_key_padding_mask)[0]
         # ========== End of Cross-Attention =============
-        tgt2 = self.pooling(tgt2)
-        # print("tgt.shape", tgt.shape)
-        # print("tgt2.shape", tgt2.shape)
+
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
