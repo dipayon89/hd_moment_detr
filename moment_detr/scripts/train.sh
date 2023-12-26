@@ -3,11 +3,11 @@ ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
 results_root=results
-exp_id=exp_paraphrased
+exp_id=exp_qd
 
 ######## data paths
-#train_path=data/highlight_train_release.jsonl
-train_path=data/highlight_train_release_paraphrased.jsonl
+train_path=data/highlight_train_release.jsonl
+#train_path=data/highlight_train_release_paraphrased.jsonl
 eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
@@ -28,8 +28,8 @@ fi
 
 # text features
 if [[ ${t_feat_type} == "clip" ]]; then
-#  t_feat_dir=${feat_root}/clip_text_features/
-  t_feat_dir=${feat_root}/clip_aug_text_features/
+  t_feat_dir=${feat_root}/clip_text_features/
+#  t_feat_dir=${feat_root}/clip_aug_text_features/
   t_feat_dim=512
 else
   echo "Wrong arg for t_feat_type."
