@@ -2,6 +2,8 @@
 """
 DETR model and criterion classes.
 """
+import random
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -13,7 +15,6 @@ from moment_detr.matcher import build_matcher
 from moment_detr.transformer import build_transformer
 from moment_detr.position_encoding import build_position_encoding
 from moment_detr.misc import accuracy
-
 
 
 def inverse_sigmoid(x, eps=1e-3):
@@ -112,6 +113,7 @@ class MomentDETR(nn.Module):
                - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
                                 dictionnaries containing the two above keys for each decoder layer.
         """
+        bs, _, _ = src_vid.shape
         src_vid = self.input_vid_proj(src_vid)
         src_txt = self.input_txt_proj(src_txt)
         # src = torch.cat([src_vid, src_txt], dim=1)  # (bsz, L_vid+L_txt, d)
@@ -123,8 +125,9 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, reference, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(), ~src_txt_mask.bool(),
-                                                     pos_vid, pos_txt, self.query_embed.weight)
+        hs, reference, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(),
+                                                                ~src_txt_mask.bool(),
+                                                                pos_vid, pos_txt, self.query_embed.weight)
         outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
         reference_before_sigmoid = inverse_sigmoid(reference)
         tmp = self.span_embed(hs)
@@ -146,15 +149,17 @@ class MomentDETR(nn.Module):
             ))
 
         ### Neg Pairs ###
-        src_txt_neg = torch.cat([src_txt[1:], src_txt[0:1]], dim=0)
-        src_txt_mask_neg = torch.cat([src_txt_mask[1:], src_txt_mask[0:1]], dim=0)
+        mixer = random.randint(1, bs-1)
+
+        src_txt_neg = torch.cat([src_txt[mixer:], src_txt[0:mixer]], dim=0)
+        src_txt_mask_neg = torch.cat([src_txt_mask[mixer:], src_txt_mask[0:mixer]], dim=0)
 
         pos_vid_neg = pos_vid.clone()
         pos_txt_neg = pos_txt.clone()
 
         _, _, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
-                                                            ~src_txt_mask_neg.bool(),
-                                                            pos_vid_neg, pos_txt_neg, self.query_embed.weight)
+                                                               ~src_txt_mask_neg.bool(),
+                                                               pos_vid_neg, pos_txt_neg, self.query_embed.weight)
         vid_mem_neg = memory_neg[:, :src_vid.shape[1]]
 
         out["saliency_scores"] = (

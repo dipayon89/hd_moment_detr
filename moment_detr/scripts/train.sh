@@ -3,7 +3,7 @@ ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
 results_root=results
-exp_id=exp_only_cross_attension_encoder
+exp_id=exp_cross_atten_enc_rn_mix_neg_txt
 
 ######## data paths
 train_path=data/highlight_train_release.jsonl
