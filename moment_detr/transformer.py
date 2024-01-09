@@ -17,6 +17,7 @@ from torch import nn, Tensor
 
 from .attention import MultiheadAttention
 
+
 class Transformer(nn.Module):
 
     def __init__(self, d_model=512, nhead=8, num_encoder_layers=6,
@@ -599,12 +600,13 @@ class VTCrossTransformer(nn.Module):
 
         # TransformerEncoderLayerThin
         encoder = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
-                                                    dropout, activation, normalize_before)
+                                          dropout, activation, normalize_before)
         seft_atten_layer = PoolformerLayer(d_model, dim_feedforward, dropout, activation)
         cross_atten_layer = CrossAttentionLayer(d_model, nhead, dim_feedforward,
                                                 dropout=dropout, activation=activation)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        self.encoder = VTCrossTransformerEncoder(seft_atten_layer, cross_atten_layer, encoder, num_encoder_layers, encoder_norm,
+        self.encoder = VTCrossTransformerEncoder(seft_atten_layer, cross_atten_layer, encoder, num_encoder_layers,
+                                                 encoder_norm,
                                                  hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
@@ -681,18 +683,18 @@ class VTCrossTransformerEncoder(nn.Module):
 
     def __init__(self, self_attn_layer, cross_attn_layer, encoder, num_layers=2, norm=None, return_intermediate=False,
                  hidden_dim=512,
-                applyPoolerBeforeMixing = False,
-                applySelfAttentionAfterMixing = False):
+                 apply_pooler_before_mixing=False,
+                 apply_self_attention_after_mixing=True):
         super().__init__()
-        self.applyPoolerBeforeMixing = applyPoolerBeforeMixing
-        self.applySelfAttentionAfterMixing = applySelfAttentionAfterMixing
-        if self.applyPoolerBeforeMixing:
+        self.apply_pooler_before_mixing = apply_pooler_before_mixing
+        self.apply_self_attention_after_mixing = apply_self_attention_after_mixing
+        if self.apply_pooler_before_mixing:
             self.layers_vid = _get_clones(self_attn_layer, 2)
             self.layers_txt = _get_clones(self_attn_layer, 2)
 
         self.layers_cross = cross_attn_layer
 
-        if self.applySelfAttentionAfterMixing:
+        if self.apply_self_attention_after_mixing:
             self.layers_encoder = _get_clones(encoder, num_layers)
 
         self.num_layers = num_layers
@@ -706,7 +708,7 @@ class VTCrossTransformerEncoder(nn.Module):
                 src_vid_key_padding_mask: Optional[Tensor] = None,
                 src_txt_key_padding_mask: Optional[Tensor] = None,
                 pos_vid: Optional[Tensor] = None,
-                pos_txt: Optional[Tensor] = None,):
+                pos_txt: Optional[Tensor] = None, ):
         # print("output.shape", output.shape)
         # print("pos.shape", pos.shape)
         # print("src_key_padding_mask.shape", src_key_padding_mask.shape)
@@ -740,7 +742,7 @@ class VTCrossTransformerEncoder(nn.Module):
         # for layer in self.layers_txt:
         #     output_txt = layer(output_txt, src_key_padding_mask=src_txt_key_padding_mask, pos=pos_txt)
 
-        if self.applyPoolerBeforeMixing:
+        if self.apply_pooler_before_mixing:
             for layer in self.layers_vid:
                 output_vid = layer(output_vid, pos=pos_vid)
 
@@ -759,7 +761,7 @@ class VTCrossTransformerEncoder(nn.Module):
         if self.return_intermediate:
             intermediate.append(output)
 
-        if self.applySelfAttentionAfterMixing:
+        if self.apply_self_attention_after_mixing:
             for layer in self.layers_encoder:
                 output = layer(output,
                                src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
@@ -815,7 +817,8 @@ class CrossAttentionLayer(nn.Module):
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.cross_attn_1 = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.cross_attn_2 = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
+        # self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
+        self.pooling = nn.MaxPool1d(3, stride=2, padding=1)
         self.linear1 = nn.Linear(d_model, d_model)
         self.linear2 = nn.Linear(d_model, dim_feedforward)
         self.linear3 = nn.Linear(dim_feedforward, d_model)
