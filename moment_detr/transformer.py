@@ -680,12 +680,21 @@ class VTCrossTransformer(nn.Module):
 class VTCrossTransformerEncoder(nn.Module):
 
     def __init__(self, self_attn_layer, cross_attn_layer, encoder, num_layers=2, norm=None, return_intermediate=False,
-                 hidden_dim=512):
+                 hidden_dim=512,
+                applyPoolerBeforeMixing = False,
+                applySelfAttentionAfterMixing = False):
         super().__init__()
-        self.layers_vid = _get_clones(self_attn_layer, 2)
-        self.layers_txt = _get_clones(self_attn_layer, 2)
+        self.applyPoolerBeforeMixing = applyPoolerBeforeMixing
+        self.applySelfAttentionAfterMixing = applySelfAttentionAfterMixing
+        if self.applyPoolerBeforeMixing:
+            self.layers_vid = _get_clones(self_attn_layer, 2)
+            self.layers_txt = _get_clones(self_attn_layer, 2)
+
         self.layers_cross = cross_attn_layer
-        self.layers_encoder = _get_clones(encoder, num_layers)
+
+        if self.applySelfAttentionAfterMixing:
+            self.layers_encoder = _get_clones(encoder, num_layers)
+
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
@@ -697,7 +706,7 @@ class VTCrossTransformerEncoder(nn.Module):
                 src_vid_key_padding_mask: Optional[Tensor] = None,
                 src_txt_key_padding_mask: Optional[Tensor] = None,
                 pos_vid: Optional[Tensor] = None,
-                pos_txt: Optional[Tensor] = None):
+                pos_txt: Optional[Tensor] = None,):
         # print("output.shape", output.shape)
         # print("pos.shape", pos.shape)
         # print("src_key_padding_mask.shape", src_key_padding_mask.shape)
@@ -731,15 +740,18 @@ class VTCrossTransformerEncoder(nn.Module):
         # for layer in self.layers_txt:
         #     output_txt = layer(output_txt, src_key_padding_mask=src_txt_key_padding_mask, pos=pos_txt)
 
-        for layer in self.layers_vid:
-            output_vid = layer(output_vid, pos=pos_vid)
+        if self.applyPoolerBeforeMixing:
+            for layer in self.layers_vid:
+                output_vid = layer(output_vid, pos=pos_vid)
 
-        for layer in self.layers_txt:
-            output_txt = layer(output_txt, pos=pos_txt)
+            for layer in self.layers_txt:
+                output_txt = layer(output_txt, pos=pos_txt)
 
         # output = torch.cat([output_vid, output_txt], dim=0)
         # pos = torch.cat([pos_vid, pos_txt], dim=0)
         # src_key_padding_mask = torch.cat([src_vid_key_padding_mask, src_txt_key_padding_mask], dim=1)
+
+        # mixing avToken before self attention
         output = self.layers_cross(output_vid, output_txt,
                                    src1_key_padding_mask=src_vid_key_padding_mask,
                                    src2_key_padding_mask=src_txt_key_padding_mask,
@@ -747,11 +759,12 @@ class VTCrossTransformerEncoder(nn.Module):
         if self.return_intermediate:
             intermediate.append(output)
 
-        for layer in self.layers_encoder:
-            output = layer(output,
-                           src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
-            if self.return_intermediate:
-                intermediate.append(output)
+        if self.applySelfAttentionAfterMixing:
+            for layer in self.layers_encoder:
+                output = layer(output,
+                               src_key_padding_mask=src_vid_key_padding_mask, pos=pos_vid)
+                if self.return_intermediate:
+                    intermediate.append(output)
 
         if self.norm is not None:
             output = self.norm(output)
