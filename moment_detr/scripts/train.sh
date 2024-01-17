@@ -1,7 +1,7 @@
 dset_name=hl
 ctx_mode=video_tef
-#v_feat_types=slowfast_clip
-v_feat_types=clip
+v_feat_types=slowfast_clip
+#v_feat_types=clip
 t_feat_type=clip
 results_root=results
 exp_id=exp_clip_cross_atten_enc_rn_mix_neg_txt
