@@ -59,8 +59,8 @@ class MomentDETR(nn.Module):
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
         span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
-        self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+        # self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
+        # self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
@@ -125,13 +125,13 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, reference, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(),
+        outputs_class, outputs_coord, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(),
                                                                 ~src_txt_mask.bool(),
                                                                 pos_vid, pos_txt, self.query_embed.weight)
-        outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
-        reference_before_sigmoid = inverse_sigmoid(reference)
-        tmp = self.span_embed(hs)
-        outputs_coord = tmp + reference_before_sigmoid
+        # outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
+        # reference_before_sigmoid = inverse_sigmoid(reference)
+        # tmp = self.span_embed(hs)
+        # outputs_coord = tmp + reference_before_sigmoid
         if self.span_loss_type == "l1":
             outputs_coord = outputs_coord.sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
@@ -139,7 +139,7 @@ class MomentDETR(nn.Module):
         txt_mem = memory[:, src_vid.shape[1]:]  # (bsz, L_txt, d)
         vid_mem = memory[:, :src_vid.shape[1]]  # (bsz, L_vid, d)
         if self.contrastive_align_loss:
-            proj_queries = F.normalize(self.contrastive_align_projection_query(hs), p=2, dim=-1)
+            proj_queries = F.normalize(self.contrastive_align_projection_query(outputs_class), p=2, dim=-1)
             proj_txt_mem = F.normalize(self.contrastive_align_projection_txt(txt_mem), p=2, dim=-1)
             proj_vid_mem = F.normalize(self.contrastive_align_projection_vid(vid_mem), p=2, dim=-1)
             out.update(dict(

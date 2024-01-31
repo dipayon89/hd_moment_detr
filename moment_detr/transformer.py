@@ -589,7 +589,7 @@ class TransformerDecoderLayerThin(nn.Module):
 class VTCrossTransformer(nn.Module):
 
     def __init__(self, d_model=512, nhead=8, num_queries=2, num_encoder_layers=2,
-                 num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
+                 num_decoder_layers=6, dim_feedforward=2048, output_dim = 75,  dropout=0.1,
                  activation="relu", normalize_before=False,
                  return_intermediate_dec=False, query_dim=2,
                  keep_query_pos=False, query_scale_type='cond_elewise',
@@ -610,15 +610,18 @@ class VTCrossTransformer(nn.Module):
                                                  hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
-        decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
-                                                  dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
-        decoder_norm = nn.LayerNorm(d_model)
-        self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
-                                            return_intermediate=return_intermediate_dec,
-                                            d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
-                                            query_scale_type=query_scale_type,
-                                            modulate_t_attn=modulate_t_attn,
-                                            bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
+        # decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
+        #                                           dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
+        # decoder_norm = nn.LayerNorm(d_model)
+        # self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
+        #                                     return_intermediate=return_intermediate_dec,
+        #                                     d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
+        #                                     query_scale_type=query_scale_type,
+        #                                     modulate_t_attn=modulate_t_attn,
+        #                                     bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
+
+        self.class_estimator = ClassPredictionHead(d_model, num_queries)
+        self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation)
 
         self._reset_parameters()
 
@@ -627,6 +630,7 @@ class VTCrossTransformer(nn.Module):
         self.dec_layers = num_decoder_layers
         self.num_queries = num_queries
         self.num_patterns = num_patterns
+        self.global_threshold = LearnableThreshold()
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -659,24 +663,19 @@ class VTCrossTransformer(nn.Module):
                                                pos_txt=pos_embed_txt)  # (L, batch_size, d)
 
         memory_global, memory_local = memory[0], memory[1:]
-        mask_local = mask[:, 1:]
-        pos_embed_local = pos_embed[1:]
+        # mask_local = mask[:, 1:]
+        # pos_embed_local = pos_embed[1:]
 
-        tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
-        # print("\n\n")
-        # print("tgt.shape", tgt.shape)
-        # print("memory_local.shape", memory_local.shape)
-        # print("mask_local.shape", mask_local.shape)
-        # print("pos_embed_local.shape", pos_embed_local.shape)
-        # print("refpoint_embed.shape", refpoint_embed.shape)
-        # print("\n\n")
-        hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
-                                      pos=pos_embed_local,
-                                      refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
-        # hs = hs.transpose(1, 2)  # (#layers, batch_size, #qeries, d)
-        # memory = memory.permute(1, 2, 0)  # (batch_size, d, L)
+        # tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
+        # hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
+        #                               pos=pos_embed_local,
+        #                               refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
+
+        hs = self.class_estimator(memory_global)
+        references = self.localization_estimator(memory_global)
+
         memory_local = memory_local.transpose(0, 1)  # (batch_size, L, d)
-        return hs, references, memory_local, memory_global
+        return hs, references, memory_local, self.global_threshold(memory_global)
 
 
 class VTCrossTransformerEncoder(nn.Module):
@@ -1135,6 +1134,70 @@ class VTTransformerDecoderLayer(nn.Module):
         return tgt
 
 
+class ClassPredictionHead(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, d_model, out_dim):
+        super().__init__()
+        self.norm = nn.LayerNorm(d_model)
+        self.conv = nn.Conv1d(1, 2, kernel_size=5, padding=2)
+        self.linear = nn.Linear(d_model, out_dim)
+        self.activation = LearnableThreshold(0.1)
+
+    def forward(self, mixed_data):
+        x = mixed_data.unsqueeze(dim=0)
+        x = x.permute(1, 0, 2)
+        x = self.norm(x)
+        x = self.conv(x)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=0.5)
+        x = self.linear(self.activation(x))
+        x = x.permute(0, 2, 1)
+        return x.unsqueeze(0)
+
+
+class LocalizationPredictionHead(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, d_model, out_dim, activation="relu"):
+        super().__init__()
+        self.norm = nn.LayerNorm(d_model)
+        self.conv = nn.Conv1d(1, 2, kernel_size=5, padding=2)
+        self.linear1 = nn.Linear(d_model, out_dim)
+        self.linear2 = nn.Linear(out_dim, out_dim)
+        self.activation = _get_activation_fn(activation)
+
+    def forward(self, mixed_data):
+        x = mixed_data.unsqueeze(dim=0)
+        x = x.permute(1, 0, 2)
+        x = self.norm(x)
+        x = self.conv(x)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=0.5)
+        x = self.linear1(x)
+        x = self.activation(x)
+        x = x.permute(0, 2, 1)
+        # x = self.linear2(x)
+        return x.unsqueeze(0)
+
+
+class LearnableThreshold(nn.Module):
+
+    def __init__(self, init: float = 0.25,
+                 device=None, dtype=None) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.init = init
+        self.weight = nn.Parameter(torch.empty(1, **factory_kwargs))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.constant_(self.weight, self.init)
+
+    def forward(self, in_data: Tensor) -> Tensor:
+        return F.threshold(in_data, self.weight.item(), 0)
+
+
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
 
@@ -1184,6 +1247,7 @@ def build_transformer(args):
         d_model=args.hidden_dim,
         dropout=args.dropout,
         nhead=args.nheads,
+        num_queries=args.num_queries,
         dim_feedforward=args.dim_feedforward,
         num_encoder_layers=args.enc_layers,
         num_decoder_layers=args.dec_layers,
@@ -1200,7 +1264,7 @@ def _get_activation_fn(activation):
     if activation == "gelu":
         return F.gelu
     if activation == "glu":
-        return F.glu
+        return F.prelu
     if activation == "prelu":
         return nn.PReLU()
     if activation == "selu":

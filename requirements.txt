@@ -32,9 +32,9 @@ lief
 Markdown
 MarkupSafe
 matplotlib
-mkl-fft
-mkl-random
-mkl-service
+#mkl-fft
+#mkl-random
+#mkl-service
 numpy
 olefile
 opencv-python
