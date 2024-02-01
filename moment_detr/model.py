@@ -206,7 +206,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
 
-    def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l, alpha=5,
+    def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l, alpha=0.5,
                  saliency_margin=1):
         """ Create the criterion.
         Parameters:
