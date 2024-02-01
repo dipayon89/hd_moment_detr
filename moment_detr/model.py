@@ -293,9 +293,9 @@ class SetCriterion(nn.Module):
             # TODO this should probably be a separate loss, not hacked in this one here
             losses['class_error'] = 100 - accuracy(src_logits[idx], self.foreground_label)[0]
 
-        src_logits_neg = outputs['pred_logits_neg']  # (batch_size, #queries, #classes=2)
-        loss_label_triplet = F.triplet_margin_loss(target_classes, src_logits[:, :, 0], src_logits_neg[:, :, 0], margin=self.alpha)
-        losses = {'loss_label_triplet': loss_label_triplet.mean()}
+        # src_logits_neg = outputs['pred_logits_neg']  # (batch_size, #queries, #classes=2)
+        # loss_label_triplet = F.triplet_margin_loss(target_classes, src_logits[:, :, 0], src_logits_neg[:, :, 0], margin=self.alpha)
+        # losses = {'loss_label_triplet': loss_label_triplet.mean()}
         return losses
 
     def loss_saliency(self, outputs, targets, indices, log=True):
