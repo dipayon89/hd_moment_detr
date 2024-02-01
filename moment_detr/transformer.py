@@ -1139,7 +1139,7 @@ class ClassPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim,
                  in_channel=1, out_channel=2,
-                 num_forward_conv_layer=3, dropout=0.1):
+                 num_forward_conv_layer=4, dropout=0.1):
         super().__init__()
         self.d_model = d_model
         self.norm = nn.LayerNorm(d_model)
@@ -1148,8 +1148,7 @@ class ClassPredictionHead(nn.Module):
         self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
         self.linear = nn.Linear(d_model, out_dim)
         self.activation = LearnableThreshold(0.1)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
+        self.dropout = dropout
 
     def forward(self, mixed_data, ):
         x = mixed_data.unsqueeze(dim=0)
@@ -1157,11 +1156,10 @@ class ClassPredictionHead(nn.Module):
         x = self.norm(x)
         x1 = torch.zeros((x.shape[0],self.d_model,x.shape[2]), device=x.device, dtype=x.dtype)
         for conv_id, conv in enumerate(self.conv_forward):
-            x1 += conv(x)
-        x = self.dropout1(x1)
-        x = self.conv_backward(x)
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
         x = x.squeeze(dim=1)
-        x = self.dropout2(x)
+        x = F.dropout(x, p=self.dropout)
         x = self.linear(self.activation(x))
         x = x.permute(0, 2, 1)
         return x.unsqueeze(0)
@@ -1172,7 +1170,7 @@ class LocalizationPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim,
                  in_channel=1, out_channel=2,
-                 num_forward_conv_layer=3,
+                 num_forward_conv_layer=4,
                  dropout=0.1, activation="relu"):
         super().__init__()
         self.d_model = d_model
@@ -1182,10 +1180,8 @@ class LocalizationPredictionHead(nn.Module):
              range(num_forward_conv_layer)])
         self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
         self.linear = nn.Linear(d_model, out_dim)
-        # self.linear2 = nn.Linear(out_dim, out_dim)
         self.activation = _get_activation_fn(activation)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
+        self.dropout = dropout
 
     def forward(self, mixed_data):
         x = mixed_data.unsqueeze(dim=0)
@@ -1193,11 +1189,10 @@ class LocalizationPredictionHead(nn.Module):
         x = self.norm(x)
         x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
         for conv_id, conv in enumerate(self.conv_forward):
-            x1 += conv(x)
-        x = self.dropout1(x1)
-        x = self.conv_backward(x)
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
         x = x.squeeze(dim=1)
-        x = self.dropout2(x)
+        x = F.dropout(x, p=self.dropout)
         x = self.linear(x)
         x = self.activation(x)
         x = x.permute(0, 2, 1)
