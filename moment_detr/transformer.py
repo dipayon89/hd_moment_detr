@@ -1139,7 +1139,7 @@ class ClassPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim,
                  in_channel=1, out_channel=2,
-                 num_forward_conv_layer=4, dropout=0.1):
+                 num_forward_conv_layer=3, dropout=0.1):
         super().__init__()
         self.d_model = d_model
         self.norm = nn.LayerNorm(d_model)
@@ -1172,7 +1172,7 @@ class LocalizationPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim,
                  in_channel=1, out_channel=2,
-                 num_forward_conv_layer=4,
+                 num_forward_conv_layer=3,
                  dropout=0.1, activation="relu"):
         super().__init__()
         self.d_model = d_model
