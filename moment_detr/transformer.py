@@ -1137,20 +1137,25 @@ class VTTransformerDecoderLayer(nn.Module):
 class ClassPredictionHead(nn.Module):
     """ Simple Prediction Head consisting of a conv layer and a linear layer """
 
-    def __init__(self, d_model, out_dim):
+    def __init__(self, d_model, out_dim, dropout=0.1):
         super().__init__()
         self.norm = nn.LayerNorm(d_model)
-        self.conv = nn.Conv1d(1, 2, kernel_size=5, padding=2)
+        self.conv1 = nn.Conv1d(1, d_model, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
         self.linear = nn.Linear(d_model, out_dim)
         self.activation = LearnableThreshold(0.1)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, mixed_data):
         x = mixed_data.unsqueeze(dim=0)
         x = x.permute(1, 0, 2)
         x = self.norm(x)
-        x = self.conv(x)
+        x = self.conv1(x)
+        x = self.dropout1(x)
+        x = self.conv2(x)
         x = x.squeeze(dim=1)
-        x = F.dropout(x, p=0.5)
+        x = self.dropout2(x)
         x = self.linear(self.activation(x))
         x = x.permute(0, 2, 1)
         return x.unsqueeze(0)
@@ -1159,21 +1164,26 @@ class ClassPredictionHead(nn.Module):
 class LocalizationPredictionHead(nn.Module):
     """ Simple Prediction Head consisting of a conv layer and a linear layer """
 
-    def __init__(self, d_model, out_dim, activation="relu"):
+    def __init__(self, d_model, out_dim, dropout=0.1, activation="relu"):
         super().__init__()
         self.norm = nn.LayerNorm(d_model)
-        self.conv = nn.Conv1d(1, 2, kernel_size=5, padding=2)
+        self.conv1 = nn.Conv1d(1, d_model, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
         self.linear1 = nn.Linear(d_model, out_dim)
         self.linear2 = nn.Linear(out_dim, out_dim)
         self.activation = _get_activation_fn(activation)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, mixed_data):
         x = mixed_data.unsqueeze(dim=0)
         x = x.permute(1, 0, 2)
         x = self.norm(x)
-        x = self.conv(x)
+        x = self.conv1(x)
+        x = self.dropout1(x)
+        x = self.conv2(x)
         x = x.squeeze(dim=1)
-        x = F.dropout(x, p=0.5)
+        x = self.dropout2(x)
         x = self.linear1(x)
         x = self.activation(x)
         x = x.permute(0, 2, 1)
