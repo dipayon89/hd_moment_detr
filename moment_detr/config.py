@@ -65,7 +65,7 @@ class BaseOptions(object):
         parser.add_argument("--clip_length", type=int, default=2)
         parser.add_argument("--max_windows", type=int, default=5)
 
-        parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")
+        parser.add_argument("--train_path", type=str, default="data/highlight_train_release.jsonl")
         parser.add_argument("--eval_path", type=str, default="data/highlight_val_release.jsonl",
                             help="Evaluating during training, for Dev set. If None, will only do training, ")
         parser.add_argument("--no_norm_vfeat", action="store_true", help="Do not do normalize video feat")
@@ -75,7 +75,7 @@ class BaseOptions(object):
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
         parser.add_argument("--t_feat_dir", type=str,
-                            default="../QVHighlights/features/clip_aug_text_features/",
+                            default="../QVHighlights/features/clip_text_features/",
                             help="text/query feature dir")
         parser.add_argument("--v_feat_dim", type=int, default=512, help="video feature dim")
         parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
