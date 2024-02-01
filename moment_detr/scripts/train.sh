@@ -4,7 +4,7 @@ v_feat_types=slowfast_clip
 #v_feat_types=clip
 t_feat_type=clip
 results_root=results
-exp_id=exp_slowfast_clip_parallel_conv_prediction_head
+exp_id=exp_slowfast_clip_parallel_conv_prediction_head_triplet_span
 
 ######## data paths
 train_path=data/highlight_train_release.jsonl

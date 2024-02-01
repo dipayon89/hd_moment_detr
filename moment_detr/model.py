@@ -157,9 +157,14 @@ class MomentDETR(nn.Module):
         pos_vid_neg = pos_vid.clone()
         pos_txt_neg = pos_txt.clone()
 
-        _, _, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
+        outputs_class_neg, outputs_coord_neg, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
                                                                ~src_txt_mask_neg.bool(),
                                                                pos_vid_neg, pos_txt_neg, self.query_embed.weight)
+
+        if self.span_loss_type == "l1":
+            outputs_coord_neg = outputs_coord_neg.sigmoid()
+        out.update({'pred_logits_neg': outputs_class_neg[-1], 'pred_spans_neg': outputs_coord_neg[-1]})
+
         vid_mem_neg = memory_neg[:, :src_vid.shape[1]]
 
         out["saliency_scores"] = (
@@ -201,7 +206,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
 
-    def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l,
+    def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l, alpha=0.5,
                  saliency_margin=1):
         """ Create the criterion.
         Parameters:
@@ -221,6 +226,7 @@ class SetCriterion(nn.Module):
         self.temperature = temperature
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
+        self.alpha = alpha
         self.saliency_margin = saliency_margin
 
         # foreground and background classification
@@ -258,9 +264,13 @@ class SetCriterion(nn.Module):
             # loss_giou = 1 - torch.diag(generalized_temporal_iou(src_span_indices, tgt_span_indices))
             loss_giou = loss_span.new_zeros([1])
 
+        neg_spans = outputs['pred_spans_neg'][idx]  # (#spans, max_v_l * 2)
+        loss_span_triplet = F.triplet_margin_loss(tgt_spans, src_spans, neg_spans, margin=self.alpha)
+
         losses = {}
         losses['loss_span'] = loss_span.mean()
         losses['loss_giou'] = loss_giou.mean()
+        losses['loss_span_triplet'] = loss_span_triplet.mean()
         return losses
 
     def loss_labels(self, outputs, targets, indices, log=True):
