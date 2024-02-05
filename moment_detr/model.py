@@ -2,9 +2,10 @@
 """
 DETR model and criterion classes.
 """
+import copy
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import nn, Tensor
 
 from moment_detr.span_utils import generalized_temporal_iou, span_cxw_to_xx
 
@@ -49,8 +50,10 @@ class MomentDETR(nn.Module):
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
         span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
-        self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+        # self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
+        self.span_embed = SpanPredictionHead(hidden_dim, span_pred_dim=span_pred_dim, in_channel=num_queries, out_channel=num_queries)
+        # self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+        self.class_embed = ClassPredictionHead(hidden_dim, num_class=2, in_channel=num_queries, out_channel=num_queries)  # 0: background, 1: foreground
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
@@ -106,8 +109,8 @@ class MomentDETR(nn.Module):
         pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
         hs, memory, _ = self.transformer(src, ~mask, self.query_embed.weight, pos, self.max_v_l)
-        outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
-        outputs_coord = self.span_embed(hs)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        outputs_class = self.class_embed(hs[-1])  # (#layers, batch_size, #queries, #classes)
+        outputs_coord = self.span_embed(hs[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
             outputs_coord = outputs_coord.sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
@@ -347,6 +350,81 @@ class SetCriterion(nn.Module):
         return losses
 
 
+class ClassPredictionHead(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, d_model, num_class=2,
+                 in_channel=10, out_channel=10,
+                 num_forward_conv_layer=3, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.norm = nn.LayerNorm(d_model)
+        self.conv_forward = nn.ModuleList(
+            [copy.deepcopy(nn.Conv1d(in_channel, d_model, kernel_size=2*(i+1)+1, padding=i+1)) for i in range(num_forward_conv_layer)])
+        self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
+        self.linear = nn.Linear(d_model, num_class)
+        self.activation = LearnableThreshold(0.1)
+        self.dropout = dropout
+
+    def forward(self, mixed_data, ):
+        x = self.norm(mixed_data)
+        x1 = torch.zeros((x.shape[0],self.d_model,x.shape[2]), device=x.device, dtype=x.dtype)
+        for conv_id, conv in enumerate(self.conv_forward):
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=self.dropout)
+        x = self.linear(self.activation(x))
+        return x.unsqueeze(0)
+
+
+class SpanPredictionHead(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, d_model, span_pred_dim=2,
+                 in_channel=10, out_channel=10,
+                 num_forward_conv_layer=3,
+                 dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.norm = nn.LayerNorm(d_model)
+        self.conv_forward = nn.ModuleList(
+            [copy.deepcopy(nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1)) for i in
+             range(num_forward_conv_layer)])
+        self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
+        # self.linear = nn.Linear(d_model, span_pred_dim)
+        self.mlp = MLP(d_model, d_model, span_pred_dim, 3)
+        self.dropout = dropout
+
+    def forward(self, mixed_data):
+        x = self.norm(mixed_data)
+        x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
+        for conv_id, conv in enumerate(self.conv_forward):
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=self.dropout)
+        x = self.mlp(x)
+        return x.unsqueeze(0)
+
+
+class LearnableThreshold(nn.Module):
+
+    def __init__(self, init: float = 0.25,
+                 device=None, dtype=None) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.init = init
+        self.weight = nn.Parameter(torch.empty(1, **factory_kwargs))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.constant_(self.weight, self.init)
+
+    def forward(self, in_data: Tensor) -> Tensor:
+        return F.threshold(in_data, self.weight.item(), 0)
+
+
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
 
@@ -355,10 +433,11 @@ class MLP(nn.Module):
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
+        self.relu = nn.PReLU()
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+            x = self.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
 
