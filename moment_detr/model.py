@@ -77,7 +77,8 @@ class MomentDETR(nn.Module):
             self.contrastive_align_projection_txt = nn.Linear(hidden_dim, contrastive_hdim)
             self.contrastive_align_projection_vid = nn.Linear(hidden_dim, contrastive_hdim)
 
-        self.saliency_proj = nn.Linear(hidden_dim, 1)
+        # self.saliency_proj = nn.Linear(hidden_dim, 1)
+        self.saliency_proj = ClassPredictionHead(hidden_dim, num_class=1, in_channel=75, out_channel=75)
         self.aux_loss = aux_loss
 
     def forward(self, src_txt, src_txt_mask, src_vid, src_vid_mask):
@@ -108,7 +109,7 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        hs, memory, _ = self.transformer(src, ~mask, self.query_embed.weight, pos, self.max_v_l)
+        hs, memory, global_memory = self.transformer(src, ~mask, self.query_embed.weight, pos, self.max_v_l)
         outputs_class = self.class_embed(hs[-1])  # (#layers, batch_size, #queries, #classes)
         outputs_coord = self.span_embed(hs[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
@@ -127,7 +128,7 @@ class MomentDETR(nn.Module):
                 proj_vid_mem=proj_vid_mem
             ))
 
-        out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1)  # (bsz, L_vid)
+        out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1).squeeze(0)  # (bsz, L_vid)
 
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem
