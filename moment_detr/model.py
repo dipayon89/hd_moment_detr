@@ -3,6 +3,8 @@
 DETR model and criterion classes.
 """
 import copy
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
@@ -78,7 +80,11 @@ class MomentDETR(nn.Module):
             self.contrastive_align_projection_vid = nn.Linear(hidden_dim, contrastive_hdim)
 
         # self.saliency_proj = nn.Linear(hidden_dim, 1)
-        self.saliency_proj = ClassPredictionHead(hidden_dim, num_class=1, in_channel=75, out_channel=75)
+        # self.saliency_proj = ClassPredictionHead(hidden_dim, num_class=1, in_channel=75, out_channel=75)
+        # self.saliency_proj = CustomLinearLayer(hidden_dim, 1)
+        self.saliency_proj1 = CustomLinearLayer(hidden_dim, hidden_dim)
+        self.saliency_proj2 = CustomLinearLayer(hidden_dim, hidden_dim)
+        self.hidden_dim = hidden_dim
         self.aux_loss = aux_loss
 
     def forward(self, src_txt, src_txt_mask, src_vid, src_vid_mask):
@@ -128,7 +134,22 @@ class MomentDETR(nn.Module):
                 proj_vid_mem=proj_vid_mem
             ))
 
-        out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1).squeeze(0)  # (bsz, L_vid)
+        # out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1).squeeze(0)  # (bsz, L_vid)
+        out["saliency_scores"] = (torch.sum(self.saliency_proj1(vid_mem) * self.saliency_proj2(global_memory).unsqueeze(1), dim=-1) / np.sqrt(self.hidden_dim))
+
+        ### Neg Pairs ###
+        src_txt_neg = torch.cat([src_txt[1:], src_txt[0:1]], dim=0)
+        src_txt_mask_neg = torch.cat([src_txt_mask[1:], src_txt_mask[0:1]], dim=0)
+        src_neg = torch.cat([src_vid, src_txt_neg], dim=1)
+        mask_neg = torch.cat([src_vid_mask, src_txt_mask_neg], dim=1).bool()
+        pos_neg = pos.clone()  # since it does not use actual content
+
+        hs_neg, memory_neg, global_memory_neg = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg, self.max_v_l)
+
+        vid_mem_neg = memory_neg[:, :src_vid.shape[1]]  # (bsz, L_vid, d)
+        out["saliency_scores_neg"] = (
+                    torch.sum(self.saliency_proj1(vid_mem_neg) * self.saliency_proj2(global_memory_neg).unsqueeze(1),
+                              dim=-1) / np.sqrt(self.hidden_dim))
 
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem
@@ -254,7 +275,18 @@ class SetCriterion(nn.Module):
             [saliency_scores[batch_indices, neg_indices[:, col_idx]] for col_idx in range(num_pairs)], dim=1)
         loss_saliency = torch.clamp(self.saliency_margin + neg_scores - pos_scores, min=0).sum() \
             / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
-        return {"loss_saliency": loss_saliency}
+
+        loss = {"loss_saliency": loss_saliency}
+        if "highlighted_clips" not in targets:
+            return loss
+
+        highlighted_clips = targets["highlighted_clips"]
+        saliency_scores_neg = outputs["saliency_scores_neg"]  # (N, L)
+        loss.update(dict(
+            highlight_loss= F.mse_loss(saliency_scores, highlighted_clips),
+            highlight_triplet_loss= F.triplet_margin_loss(highlighted_clips, saliency_scores, saliency_scores_neg),
+        ))
+        return loss
 
     def loss_contrastive_align(self, outputs, targets, indices, log=True):
         """encourage higher scores between matched query span and input text"""
@@ -464,6 +496,32 @@ class LinearLayer(nn.Module):
         x = self.net(x)
         if self.relu:
             x = F.relu(x, inplace=True)
+        return x  # (N, L, D)
+
+class CustomLinearLayer(nn.Module):
+    """linear layer configurable with layer normalization, dropout, ReLU."""
+
+    def __init__(self, in_hsz, out_hsz, layer_norm=True, dropout=0.1, relu=True):
+        super(CustomLinearLayer, self).__init__()
+        self.relu = relu
+        if self.relu:
+            self.activation = LearnableThreshold(0.1)
+        self.layer_norm = layer_norm
+        if layer_norm:
+            self.LayerNorm = nn.LayerNorm(in_hsz)
+        layers = [
+            nn.Dropout(dropout),
+            nn.Linear(in_hsz, out_hsz)
+        ]
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        """(N, L, D)"""
+        if self.layer_norm:
+            x = self.LayerNorm(x)
+        x = self.net(x)
+        if self.relu:
+            x = self.activation(x)
         return x  # (N, L, D)
 
 

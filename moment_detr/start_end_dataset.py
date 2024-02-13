@@ -99,6 +99,11 @@ class StartEndDataset(Dataset):
             else:
                 model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"] = \
                     self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l)  # only one gt
+
+        saliency = torch.zeros(self.max_v_l)
+        for idx in meta["relevant_clip_ids"]:
+            saliency[idx] = 1
+        model_inputs["highlighted_clips"] = saliency
         return dict(meta=meta, model_inputs=model_inputs)
 
     def get_saliency_labels_sub_as_query(self, gt_window, ctx_l, max_n=2):
@@ -242,6 +247,8 @@ def prepare_batch_inputs(batched_model_inputs, device, non_blocking=False):
     if "saliency_pos_labels" in batched_model_inputs:
         for name in ["saliency_pos_labels", "saliency_neg_labels"]:
             targets[name] = batched_model_inputs[name].to(device, non_blocking=non_blocking)
+    if "highlighted_clips" in batched_model_inputs:
+        targets["highlighted_clips"] = batched_model_inputs["highlighted_clips"][0].to(device, non_blocking=non_blocking)
 
     targets = None if len(targets) == 0 else targets
     return model_inputs, targets
