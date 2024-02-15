@@ -4,7 +4,7 @@ v_feat_types=slowfast_clip
 #v_feat_types=clip
 t_feat_type=clip
 results_root=results
-exp_id=moment_detr_cross_enc_conv_pred_head_sal_triplet
+exp_id=moment_detr_cross_enc_conv_pred_head_sal_span_triplet
 
 ######## data paths
 train_path=data/highlight_train_release.jsonl

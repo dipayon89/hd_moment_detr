@@ -53,26 +53,34 @@ class MomentDETR(nn.Module):
         self.max_v_l = max_v_l
         span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
         # self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        self.span_embed = SpanPredictionHead(hidden_dim, span_pred_dim=span_pred_dim, in_channel=num_queries, out_channel=num_queries)
+        self.span_embed = SpanPredictionHead(hidden_dim, span_pred_dim=span_pred_dim, in_channel=num_queries,
+                                             out_channel=num_queries)
         # self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
-        self.class_embed = ClassPredictionHead(hidden_dim, num_class=2, in_channel=num_queries, out_channel=num_queries)  # 0: background, 1: foreground
+        self.class_embed = ClassPredictionHead(hidden_dim, num_class=2, in_channel=num_queries,
+                                               out_channel=num_queries)  # 0: background, 1: foreground
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
         # self.background_thd = background_thd
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         relu_args = [True] * 3
-        relu_args[n_input_proj-1] = False
+        relu_args[n_input_proj - 1] = False
         self.input_txt_proj = nn.Sequential(*[
-            LinearLayer(txt_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[0]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[1]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[2])
-        ][:n_input_proj])
+                                                 LinearLayer(txt_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[0]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[1]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[2])
+                                             ][:n_input_proj])
         self.input_vid_proj = nn.Sequential(*[
-            LinearLayer(vid_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[0]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[1]),
-            LinearLayer(hidden_dim, hidden_dim, layer_norm=True, dropout=input_dropout, relu=relu_args[2])
-        ][:n_input_proj])
+                                                 LinearLayer(vid_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[0]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[1]),
+                                                 LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
+                                                             dropout=input_dropout, relu=relu_args[2])
+                                             ][:n_input_proj])
         self.contrastive_align_loss = contrastive_align_loss
         if contrastive_align_loss:
             self.contrastive_align_projection_query = nn.Linear(hidden_dim, contrastive_hdim)
@@ -135,7 +143,9 @@ class MomentDETR(nn.Module):
             ))
 
         # out["saliency_scores"] = self.saliency_proj(vid_mem).squeeze(-1).squeeze(0)  # (bsz, L_vid)
-        out["saliency_scores"] = (torch.sum(self.saliency_proj1(vid_mem) * self.saliency_proj2(global_memory).unsqueeze(1), dim=-1) / np.sqrt(self.hidden_dim))
+        out["saliency_scores"] = (
+                torch.sum(self.saliency_proj1(vid_mem) * self.saliency_proj2(global_memory).unsqueeze(1),
+                          dim=-1) / np.sqrt(self.hidden_dim))
 
         ### Neg Pairs ###
         src_txt_neg = torch.cat([src_txt[1:], src_txt[0:1]], dim=0)
@@ -144,12 +154,18 @@ class MomentDETR(nn.Module):
         mask_neg = torch.cat([src_vid_mask, src_txt_mask_neg], dim=1).bool()
         pos_neg = pos.clone()  # since it does not use actual content
 
-        hs_neg, memory_neg, global_memory_neg = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg, self.max_v_l)
+        hs_neg, memory_neg, global_memory_neg = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg,
+                                                                 self.max_v_l)
+        outputs_class_neg = self.class_embed(hs[-1])  # (#layers, batch_size, #queries, #classes)
+        outputs_coord_neg = self.span_embed(hs[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        if self.span_loss_type == "l1":
+            outputs_coord_neg = outputs_coord_neg.sigmoid()
+        out.update({'pred_logits_neg': outputs_class_neg[-1], 'pred_spans_neg': outputs_coord_neg[-1]})
 
         vid_mem_neg = memory_neg[:, :src_vid.shape[1]]  # (bsz, L_vid, d)
         out["saliency_scores_neg"] = (
-                    torch.sum(self.saliency_proj1(vid_mem_neg) * self.saliency_proj2(global_memory_neg).unsqueeze(1),
-                              dim=-1) / np.sqrt(self.hidden_dim))
+                torch.sum(self.saliency_proj1(vid_mem_neg) * self.saliency_proj2(global_memory_neg).unsqueeze(1),
+                          dim=-1) / np.sqrt(self.hidden_dim))
 
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem
@@ -178,7 +194,7 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l,
-                 saliency_margin=1):
+                 saliency_margin=1, triplet_margin=5):
         """ Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -198,6 +214,7 @@ class SetCriterion(nn.Module):
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
         self.saliency_margin = saliency_margin
+        self.triplet_margin = triplet_margin
 
         # foreground and background classification
         self.foreground_label = 0
@@ -234,9 +251,18 @@ class SetCriterion(nn.Module):
             # loss_giou = 1 - torch.diag(generalized_temporal_iou(src_span_indices, tgt_span_indices))
             loss_giou = loss_span.new_zeros([1])
 
-        losses = {}
-        losses['loss_span'] = loss_span.mean()
-        losses['loss_giou'] = loss_giou.mean()
+        losses = {'loss_giou': loss_giou.mean()}
+        if "pred_spans_neg" not in targets:
+            neg_spans = outputs['pred_spans_neg'][idx]  # (#spans, max_v_l * 2)
+            if self.span_loss_type == "l1":
+                loss_span_triplet = F.triplet_margin_with_distance_loss(tgt_spans, src_spans, neg_spans,
+                                                                        distance_function=F.l1_loss, margin=self.triplet_margin)
+            else:
+                loss_span_triplet = F.triplet_margin_with_distance_loss(tgt_spans, src_spans, neg_spans,
+                                                                        distance_function=F.cross_entropy, margin=self.triplet_margin)
+            losses['loss_span'] = loss_span.mean() + loss_span_triplet.mean()
+        else:
+            losses['loss_span'] = loss_span.mean()
         return losses
 
     def loss_labels(self, outputs, targets, indices, log=True):
@@ -274,19 +300,20 @@ class SetCriterion(nn.Module):
         neg_scores = torch.stack(
             [saliency_scores[batch_indices, neg_indices[:, col_idx]] for col_idx in range(num_pairs)], dim=1)
         loss_saliency = torch.clamp(self.saliency_margin + neg_scores - pos_scores, min=0).sum() \
-            / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
+                        / (len(pos_scores) * num_pairs) * 2  # * 2 to keep the loss the same scale
 
-        loss = {"loss_saliency": loss_saliency}
         if "highlighted_clips" not in targets:
-            return loss
+            return {"loss_saliency": loss_saliency}
 
         highlighted_clips = targets["highlighted_clips"]
         saliency_scores_neg = outputs["saliency_scores_neg"]  # (N, L)
-        loss.update(dict(
-            highlight_loss= F.mse_loss(saliency_scores, highlighted_clips),
-            highlight_triplet_loss= F.triplet_margin_loss(highlighted_clips, saliency_scores, saliency_scores_neg),
-        ))
-        return loss
+
+        return {"loss_saliency": loss_saliency + F.mse_loss(saliency_scores, highlighted_clips)
+                                 + F.triplet_margin_with_distance_loss(highlighted_clips,
+                                                                       saliency_scores,
+                                                                       saliency_scores_neg,
+                                                                       distance_function=F.mse_loss,
+                                                                       margin=self.triplet_margin)}
 
     def loss_contrastive_align(self, outputs, targets, indices, log=True):
         """encourage higher scores between matched query span and input text"""
@@ -393,7 +420,8 @@ class ClassPredictionHead(nn.Module):
         self.d_model = d_model
         self.norm = nn.LayerNorm(d_model)
         self.conv_forward = nn.ModuleList(
-            [copy.deepcopy(nn.Conv1d(in_channel, d_model, kernel_size=2*(i+1)+1, padding=i+1)) for i in range(num_forward_conv_layer)])
+            [nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1) for i in
+             range(num_forward_conv_layer)])
         self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
         self.linear = nn.Linear(d_model, num_class)
         self.activation = LearnableThreshold(0.1)
@@ -401,7 +429,7 @@ class ClassPredictionHead(nn.Module):
 
     def forward(self, mixed_data, ):
         x = self.norm(mixed_data)
-        x1 = torch.zeros((x.shape[0],self.d_model,x.shape[2]), device=x.device, dtype=x.dtype)
+        x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
         for conv_id, conv in enumerate(self.conv_forward):
             x1 += conv(F.dropout(x, p=self.dropout))
         x = self.conv_backward(x1)
@@ -422,7 +450,7 @@ class SpanPredictionHead(nn.Module):
         self.d_model = d_model
         self.norm = nn.LayerNorm(d_model)
         self.conv_forward = nn.ModuleList(
-            [copy.deepcopy(nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1)) for i in
+            [nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1) for i in
              range(num_forward_conv_layer)])
         self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
         # self.linear = nn.Linear(d_model, span_pred_dim)
@@ -497,6 +525,7 @@ class LinearLayer(nn.Module):
         if self.relu:
             x = F.relu(x, inplace=True)
         return x  # (N, L, D)
+
 
 class CustomLinearLayer(nn.Module):
     """linear layer configurable with layer normalization, dropout, ReLU."""
