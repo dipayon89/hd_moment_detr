@@ -1,4 +1,16 @@
 import torch
+from pathlib import Path
+
+import clip
+import cv2
+import matplotlib.pyplot as plt
+import seaborn as sns
+import torch
+from PIL import Image
+from tqdm import tqdm
+
+sns.set_theme()
+torch.set_printoptions(sci_mode=False)
 
 from run_on_video.data_utils import ClipFeatureExtractor
 from run_on_video.model_utils import build_inference_model
@@ -8,6 +20,13 @@ from utils.basic_utils import l2_normalize_np_array
 import torch.nn.functional as F
 import numpy as np
 
+def plot_search(query, similarities):
+    plt.figure(figsize=(8, 4))
+    plt.plot((100 * similarities).softmax(dim=0).tolist())
+    plt.title(f"Search of video frames for '{query}'")
+    plt.xlabel("Frame number")
+    plt.ylabel("Query-frame similarity (softmaxed)")
+    plt.show()
 
 class MomentDETRPredictor:
     def __init__(self, ckpt_path, clip_model_name_or_path="ViT-B/32", device="cuda"):
@@ -31,6 +50,7 @@ class MomentDETRPredictor:
         # construct model inputs
         n_query = len(query_list)
         video_feats = self.feature_extractor.encode_video(video_path)
+        video_feats_back = video_feats
         video_feats = F.normalize(video_feats, dim=-1, eps=1e-5)
         n_frames = len(video_feats)
         # add tef
@@ -42,7 +62,8 @@ class MomentDETRPredictor:
                                "to 150 secs (i.e., 75 2-sec clips) in length"
         video_feats = video_feats.unsqueeze(0).repeat(n_query, 1, 1)  # (#text, T, d)
         video_mask = torch.ones(n_query, n_frames).to(self.device)
-        query_feats = self.feature_extractor.encode_text(query_list)  # #text * (L, d)
+        encode_text_query = self.feature_extractor.encode_text_query(query_list)  # #text * (L, d)
+        query_feats = encode_text_query[0]['last_hidden_state'].unsqueeze(dim=0)
         query_feats, query_mask = pad_sequences_1d(
             query_feats, dtype=torch.float32, device=self.device, fixed_length=None)
         query_feats = F.normalize(query_feats, dim=-1, eps=1e-5)
@@ -52,6 +73,9 @@ class MomentDETRPredictor:
             src_txt=query_feats,
             src_txt_mask=query_mask
         )
+
+        similarities = torch.cosine_similarity(video_feats_back, encode_text_query[0]['pooler_output'])
+        plot_search(query_list, similarities.squeeze())
 
         # decode outputs
         outputs = self.model(**model_inputs)
@@ -90,7 +114,7 @@ class MomentDETRPredictor:
 def run_example():
     # load example data
     from utils.basic_utils import load_jsonl
-    video_path = "example/RoripwjYFp8_60.0_210.0.mp4"
+    video_path = "example/HY7EC5zXoEE_60.0_210.0.mp4"
     query_path = "example/queries.jsonl"
     queries = load_jsonl(query_path)
     query_text_list = [e["query"] for e in queries]

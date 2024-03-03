@@ -93,12 +93,12 @@ class Transformer(nn.Module):
         mask = mask[:, :video_length + 1]
         pos_embed = pos_embed[:video_length + 1]
 
-        tgt = torch.zeros_like(query_embed)
         memory = self.self_encoder(src, src_key_padding_mask=mask, pos=pos_embed, video_length=video_length)  # (L, batch_size, d)
         memory_global, memory_local = memory[0], memory[1:]
         mask_local = mask[:, 1:]
         pos_embed_local = pos_embed[1:]
 
+        tgt = torch.zeros_like(query_embed)
         hs = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
                           pos=pos_embed_local, query_pos=query_embed)  # (#layers, #queries, batch_size, d)
         hs = hs.transpose(1, 2)  # (#layers, batch_size, #qeries, d)
