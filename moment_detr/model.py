@@ -81,6 +81,9 @@ class MomentDETR(nn.Module):
                                                  LinearLayer(hidden_dim, hidden_dim, layer_norm=True,
                                                              dropout=input_dropout, relu=relu_args[2])
                                              ][:n_input_proj])
+        # self.input_txt_proj = PreprocessingModule(txt_dim, hidden_dim)
+        # self.input_vid_proj = PreprocessingModule(vid_dim, hidden_dim)
+
         self.contrastive_align_loss = contrastive_align_loss
         if contrastive_align_loss:
             self.contrastive_align_projection_query = nn.Linear(hidden_dim, contrastive_hdim)
@@ -126,6 +129,8 @@ class MomentDETR(nn.Module):
         hs, memory, global_memory = self.transformer(src, ~mask, self.query_embed.weight, pos, self.max_v_l)
         outputs_class = self.class_embed(hs[-1])  # (#layers, batch_size, #queries, #classes)
         outputs_coord = self.span_embed(hs[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        # outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
+        # outputs_coord = self.span_embed(hs)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
             outputs_coord = outputs_coord.sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
@@ -156,8 +161,10 @@ class MomentDETR(nn.Module):
 
         hs_neg, memory_neg, global_memory_neg = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg,
                                                                  self.max_v_l)
-        outputs_class_neg = self.class_embed(hs[-1])  # (#layers, batch_size, #queries, #classes)
-        outputs_coord_neg = self.span_embed(hs[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        outputs_class_neg = self.class_embed(hs_neg[-1])  # (#layers, batch_size, #queries, #classes)
+        outputs_coord_neg = self.span_embed(hs_neg[-1])  # (#layers, bsz, #queries, 2 or max_v_l * 2)
+        # outputs_class_neg = self.class_embed(hs_neg)  # (#layers, batch_size, #queries, #classes)
+        # outputs_coord_neg = self.span_embed(hs_neg)  # (#layers, bsz, #queries, 2 or max_v_l * 2)
         if self.span_loss_type == "l1":
             outputs_coord_neg = outputs_coord_neg.sigmoid()
         out.update({'pred_logits_neg': outputs_class_neg[-1], 'pred_spans_neg': outputs_coord_neg[-1]})
@@ -252,14 +259,16 @@ class SetCriterion(nn.Module):
             loss_giou = loss_span.new_zeros([1])
 
         losses = {'loss_giou': loss_giou.mean()}
-        if "pred_spans_neg" not in targets:
+        if "pred_spans_neg" in targets:
             neg_spans = outputs['pred_spans_neg'][idx]  # (#spans, max_v_l * 2)
             if self.span_loss_type == "l1":
                 loss_span_triplet = F.triplet_margin_with_distance_loss(tgt_spans, src_spans, neg_spans,
-                                                                        distance_function=F.l1_loss, margin=self.triplet_margin)
+                                                                        distance_function=F.l1_loss,
+                                                                        margin=self.triplet_margin)
             else:
                 loss_span_triplet = F.triplet_margin_with_distance_loss(tgt_spans, src_spans, neg_spans,
-                                                                        distance_function=F.cross_entropy, margin=self.triplet_margin)
+                                                                        distance_function=F.cross_entropy,
+                                                                        margin=self.triplet_margin)
             losses['loss_span'] = loss_span.mean() + loss_span_triplet.mean()
         else:
             losses['loss_span'] = loss_span.mean()
@@ -408,6 +417,32 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
         return losses
+
+
+class PreprocessingModule(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, in_channel, out_channel,
+                 num_forward_conv_layer=3, dropout=0.1):
+        super().__init__()
+        self.out_channel = out_channel
+        self.d_model = out_channel * 2
+        self.conv_forward = nn.ModuleList(
+            [nn.Conv1d(in_channel, self.d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1) for i in
+             range(num_forward_conv_layer)])
+        self.conv_backward = nn.Conv1d(self.d_model, out_channel, kernel_size=5, padding=2)
+        self.norm = nn.LayerNorm(self.out_channel)
+        self.dropout = dropout
+
+    def forward(self, x, ):
+        x = x.permute(0, 2, 1)
+        x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
+        for conv_id, conv in enumerate(self.conv_forward):
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
+        x = x.permute(0, 2, 1)
+        x = self.norm(F.relu(x, inplace=True))
+        return x
 
 
 class ClassPredictionHead(nn.Module):

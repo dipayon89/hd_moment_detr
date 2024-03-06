@@ -34,7 +34,7 @@ class BaseOptions(object):
         parser.add_argument("--exp_id", type=str, default="exp", help="id of this run, required at training")
         parser.add_argument("--seed", type=int, default=2018, help="random seed")
         parser.add_argument("--device", type=int, default=0, help="0 cuda, -1 cpu")
-        parser.add_argument("--num_workers", type=int, default=4,
+        parser.add_argument("--num_workers", type=int, default=0,
                             help="num subprocesses used to load the data, 0: use main process")
         parser.add_argument("--no_pin_memory", action="store_true",
                             help="Don't use pin_memory=True for dataloader. "
