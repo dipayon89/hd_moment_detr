@@ -71,13 +71,16 @@ class BaseOptions(object):
         parser.add_argument("--no_norm_vfeat", action="store_true", help="Do not do normalize video feat")
         parser.add_argument("--no_norm_tfeat", action="store_true", help="Do not do normalize text feat")
         parser.add_argument("--v_feat_dirs", type=str, nargs="+",
-                            default="../QVHighlights/features/clip_features",
+                            default=[
+                                        "../QVHighlights/features/slowfast_features",
+                                        "../QVHighlights/features/clip_features"
+                                    ],
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
         parser.add_argument("--t_feat_dir", type=str,
                             default="../QVHighlights/features/clip_aug_text_features/",
                             help="text/query feature dir")
-        parser.add_argument("--v_feat_dim", type=int, default=512, help="video feature dim")
+        parser.add_argument("--v_feat_dim", type=int, default=2816, help="video feature dim")
         parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
         parser.add_argument("--ctx_mode", type=str, default="video_tef")
 
@@ -172,7 +175,7 @@ class BaseOptions(object):
             saved_options = load_json(os.path.join(opt.model_dir, self.saved_option_filename))
             for arg in saved_options:  # use saved options to overwrite all BaseOptions args.
                 if arg not in ["results_root", "num_workers", "nms_thd", "debug",  # "max_before_nms", "max_after_nms"
-                               "max_pred_l", "min_pred_l",
+                               "max_pred_l", "min_pred_l", 'eval_split_name', 'eval_path',
                                "resume", "resume_all", "no_sort_results"]:
                     setattr(opt, arg, saved_options[arg])
             # opt.no_core_driver = True

@@ -12,7 +12,7 @@ from torch import nn
 from moment_detr.span_utils import generalized_temporal_iou, span_cxw_to_xx
 
 from moment_detr.matcher import build_matcher
-from moment_detr.transformer import build_transformer
+from moment_detr.transformer import build_transformer, PoolformerLayer
 from moment_detr.position_encoding import build_position_encoding
 from moment_detr.misc import accuracy
 
@@ -477,6 +477,26 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
         return losses
+
+
+class ProjectionHead(nn.Module):
+    """ Simple Prediction Head consisting of a conv layer and a linear layer """
+
+    def __init__(self, in_dim, out_dim, h_dim, dropout=0.1):
+        super().__init__()
+        self.conv1 = nn.Conv1d(in_dim, h_dim, kernel_size=3, padding=1)
+        self.linear = nn.Linear(h_dim, out_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(out_dim)
+
+    def forward(self, mixed_data):
+        x = mixed_data
+        x = x.permute(0, 2, 1)
+        x = self.conv1(x)
+        x = self.dropout1(x)
+        x = x.permute(0, 2, 1)
+        x = self.linear(F.relu(x))
+        return self.norm(x)
 
 
 class MLP(nn.Module):

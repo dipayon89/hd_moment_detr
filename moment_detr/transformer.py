@@ -620,6 +620,10 @@ class VTCrossTransformer(nn.Module):
         #                                     modulate_t_attn=modulate_t_attn,
         #                                     bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
 
+        
+        # self.saliency_proj1 = nn.Linear(d_model, d_model)
+        # self.saliency_proj2 = nn.Linear(d_model, d_model)
+
         self.class_estimator = ClassPredictionHead(d_model, num_queries)
         self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation)
 
@@ -671,8 +675,13 @@ class VTCrossTransformer(nn.Module):
         #                               pos=pos_embed_local,
         #                               refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
 
-        hs = self.class_estimator(memory_global)
-        references = self.localization_estimator(memory_global)
+
+
+        # hs = self.class_estimator(memory_global)
+        # references = self.localization_estimator(memory_global)
+
+        hs = self.class_estimator(memory)
+        references = self.localization_estimator(memory)
 
         memory_local = memory_local.transpose(0, 1)  # (batch_size, L, d)
         return hs, references, memory_local, self.global_threshold(memory_global)
@@ -813,11 +822,12 @@ class CrossAttentionLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu"):
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.cross_attn_1 = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.cross_attn_2 = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn_1 = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn_2 = MultiheadAttention(d_model, nhead, dropout=dropout)
         # self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
-        self.pooling = nn.MaxPool1d(3, stride=2, padding=1)
+        # self.pooling = nn.MaxPool1d(3, stride=2, padding=1)
+        self.conv = nn.Conv1d(d_model*2, d_model, kernel_size=3, padding=1)
         self.linear1 = nn.Linear(d_model, d_model)
         self.linear2 = nn.Linear(d_model, dim_feedforward)
         self.linear3 = nn.Linear(dim_feedforward, d_model)
@@ -851,7 +861,11 @@ class CrossAttentionLayer(nn.Module):
         out2 = self.dropout2(out2)
 
         # print("out2.shape", out2.shape)
-        out3 = self.norm2(self.pooling(torch.cat([out1, out2], dim=2)))
+        x = torch.cat([out1, out2], dim=2)
+        x = x.permute(0, 2, 1)
+        x = self.conv(x)
+        x = x.permute(0, 2, 1)
+        out3 = self.norm2(x)
 
         # print("out3.shape", out3.shape)
         k = v = self.with_pos_embed(src1, pos1)
@@ -1139,25 +1153,26 @@ class ClassPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim, dropout=0.1):
         super().__init__()
-        self.norm = nn.LayerNorm(d_model)
-        self.conv1_1 = nn.Conv1d(1, d_model, kernel_size=3, padding=1)
-        self.conv1_2 = nn.Conv1d(1, d_model, kernel_size=5, padding=2)
-        self.conv1_3 = nn.Conv1d(1, d_model, kernel_size=7, padding=3)
+        self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
+        self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
+        self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
         self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
-        self.linear = nn.Linear(d_model, out_dim)
+        self.linear = nn.Linear(76, out_dim)
+        self.norm = nn.LayerNorm(76)
         self.activation = LearnableThreshold(0.1)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, mixed_data):
-        x = mixed_data.unsqueeze(dim=0)
-        x = x.permute(1, 0, 2)
-        x = self.norm(x)
+        x = mixed_data #.unsqueeze(dim=0)
+        x = x.permute(0, 2, 1)
         x = self.conv1_1(x) + self.conv1_2(x) + self.conv1_3(x)
         x = self.dropout1(x)
         x = self.conv2(x)
-        x = x.squeeze(dim=1)
+        # x = x.squeeze(dim=1)
         x = self.dropout2(x)
+        x = x.permute(2, 1, 0)
+        x = self.norm(x)
         x = self.linear(self.activation(x))
         x = x.permute(0, 2, 1)
         return x.unsqueeze(0)
@@ -1168,29 +1183,30 @@ class LocalizationPredictionHead(nn.Module):
 
     def __init__(self, d_model, out_dim, dropout=0.1, activation="relu"):
         super().__init__()
-        self.norm = nn.LayerNorm(d_model)
-        self.conv1_1 = nn.Conv1d(1, d_model, kernel_size=3, padding=1)
-        self.conv1_2 = nn.Conv1d(1, d_model, kernel_size=5, padding=2)
-        self.conv1_3 = nn.Conv1d(1, d_model, kernel_size=7, padding=3)
+        self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
+        self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
+        self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
         self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
-        self.linear = nn.Linear(d_model, out_dim)
+        self.norm = nn.LayerNorm(76)
+        self.mlp = MLP(76, d_model, out_dim, 3)
         # self.linear2 = nn.Linear(out_dim, out_dim)
         self.activation = _get_activation_fn(activation)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, mixed_data):
-        x = mixed_data.unsqueeze(dim=0)
-        x = x.permute(1, 0, 2)
-        x = self.norm(x)
+        x = mixed_data #.unsqueeze(dim=0)
+        x = x.permute(0, 2, 1)
         x = self.conv1_1(x) + self.conv1_2(x) + self.conv1_3(x)
         x = self.dropout1(x)
         x = self.conv2(x)
-        x = x.squeeze(dim=1)
+        # x = x.squeeze(dim=1)
         x = self.dropout2(x)
-        x = self.linear(x)
-        x = self.activation(x)
+        x = x.permute(2, 1, 0)
+        x = self.norm(x)
+        x = self.mlp(x)
         x = x.permute(0, 2, 1)
+        # x = self.activation(x)
         # x = self.linear2(x)
         return x.unsqueeze(0)
 

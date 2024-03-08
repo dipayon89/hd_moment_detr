@@ -41,7 +41,7 @@ def post_processing_mr_nms(mr_res, nms_thd, max_before_nms, max_after_nms):
 
 def eval_epoch_post_processing(submission, opt, gt_data, save_submission_filename):
     # IOU_THDS = (0.5, 0.7)
-    logger.info("Saving/Evaluating before nms results")
+    logger.info("Saving/Evaluating before nms results for {}".format(opt.eval_split_name))
     submission_path = os.path.join(opt.results_dir, save_submission_filename)
     save_jsonl(submission, submission_path)
 
@@ -238,14 +238,15 @@ def start_inference():
         normalize_t=not opt.no_norm_tfeat,
         clip_len=opt.clip_length,
         max_windows=opt.max_windows,
-        load_labels=True,  # opt.eval_split_name == "val",
+        load_labels=(opt.eval_split_name == "val"),
         span_loss_type=opt.span_loss_type,
         txt_drop_ratio=0
     )
 
     model, criterion, _, _ = setup_model(opt)
-    save_submission_filename = "inference_{}_{}_{}_preds.jsonl".format(
+    save_submission_filename = "inference_{}_{}_{}_submission.jsonl".format(
         opt.dset_name, opt.eval_split_name, opt.eval_id)
+    logger.info("Submission filename {}".format(save_submission_filename))
     logger.info("Starting inference...")
     with torch.no_grad():
         metrics_no_nms, metrics_nms, eval_loss_meters, latest_file_paths = \
