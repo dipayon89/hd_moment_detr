@@ -1,27 +1,34 @@
 import json
 
-import openai
-from torch.utils.data import Dataset
 from tqdm import tqdm
 import time
 
-# Replace 'your-api-key' with your actual OpenAI API key
-api_key = ''
+from openai import OpenAI
 
 
 def paraphrase_string(input_string):
-    # Set your OpenAI API key
-    openai.api_key = api_key
+    openai = OpenAI()
 
     # Specify the prompt for paraphrasing
     prompt = f"Paraphrase the following sentence:\n'{input_string}'\nParaphrased sentence:"
 
     # Use the OpenAI Completions API to generate a paraphrased version
-    response = openai.Completion.create(
-        engine="text-davinci-002",  # You can try other engines as well
+    # response = openai.Completion.create(
+    #     engine="gpt-3.5-turbo-instruct",  # You can try other engines as well
+    #     prompt=prompt,
+    #     temperature=0.7,
+    #     max_tokens=100,
+    #     n=1,
+    #     stop=None,
+    #     frequency_penalty=0.0,
+    #     presence_penalty=0.0
+    # )
+
+    response = openai.completions.create(
+        model="gpt-3.5-turbo-instruct",
         prompt=prompt,
         temperature=0.7,
-        max_tokens=100,
+        max_tokens=32,
         n=1,
         stop=None,
         frequency_penalty=0.0,
@@ -29,7 +36,7 @@ def paraphrase_string(input_string):
     )
 
     # Extract the paraphrased sentence from the API response
-    paraphrased_sentence = response['choices'][0]['text'].strip()
+    paraphrased_sentence = response.choices[0].text.strip()
 
     print(f"\n{input_string=} <-> {paraphrased_sentence=}")
 
@@ -77,5 +84,36 @@ def get_paraphrased_strings():
     save_jsonl(json_data, input_file+"1")
 
 
+def paraphrase_strings():
+    input_file = "../data/highlight_train_release.jsonl"
+    output_file = "../data/highlight_train_release_paraphrased_openai.jsonl"
+    json_data = load_jsonl(input_file)
+    augmented_data = []
+
+    i = 0;
+    print("Loading data...")
+    for data in tqdm(json_data):
+        new_dict = dict.fromkeys(
+            ['qid', 'aug_id', 'query', 'duration', 'vid', 'relevant_clip_ids', 'saliency_scores', 'relevant_windows'])
+        new_dict["qid"] = data["qid"]
+        new_dict["aug_id"] = 0
+        new_dict["query"] = data["query"]
+        new_dict["duration"] = data["duration"]
+        new_dict["vid"] = data["vid"]
+        new_dict["relevant_clip_ids"] = data["relevant_clip_ids"]
+        new_dict["saliency_scores"] = data["saliency_scores"]
+        new_dict["relevant_windows"] = data["relevant_windows"]
+        augmented_data.append(new_dict)
+
+        new_dict = new_dict.copy()
+        new_dict["aug_id"] = 1
+        new_dict['query'] = paraphrase_string(new_dict['query'])
+        augmented_data.append(new_dict)
+        time.sleep(0.25)
+
+    save_jsonl(augmented_data, output_file)
+
+
 if __name__ == "__main__":
-    get_paraphrased_strings()
+    # get_paraphrased_strings()
+    paraphrase_strings()

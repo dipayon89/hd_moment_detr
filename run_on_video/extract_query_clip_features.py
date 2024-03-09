@@ -71,8 +71,8 @@ def collate_fn(batch):
 
 
 def extract_train_query_features():
-    input_file = "../data/highlight_train_release_paraphrased.jsonl"
-    q_feat_dir = "../../QVHighlights/features/clip_aug_text_features"
+    input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
+    q_feat_dir = "../QVHighlights/features/clip_aug_text_features_openai"
 
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
@@ -86,8 +86,8 @@ def extract_train_query_features():
 
 
 def extract_val_query_features():
-    input_file = "../data/highlight_val_release.jsonl"
-    q_feat_dir = "../../QVHighlights/features/clip_aug_text_features"
+    input_file = "data/highlight_val_release.jsonl"
+    q_feat_dir = "../QVHighlights/features/clip_aug_text_features_openai"
 
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
@@ -99,9 +99,26 @@ def extract_val_query_features():
         # print(batch_result)
         save_query_features(batch, batch_result, q_feat_dir, False)
 
+def extract_test_query_features():
+    input_file = "data/highlight_test_release.jsonl"
+    q_feat_dir = "../QVHighlights/features/clip_aug_text_features_openai"
 
-if __name__ == "__main__":
+    dataset = QVHighlightsDataset(input_file)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
+
+    for batch in tqdm(dataloader):
+        batch_query = generate_batched_query(batch)
+        # print(batch_prompt)
+        batch_result = feature_extractor.encode_text_query(batch_query)
+        # print(batch_result)
+        save_query_features(batch, batch_result, q_feat_dir, False)
+
+def extract_all_query_features():
     extract_train_query_features()
     extract_val_query_features()
+    extract_test_query_features()
+
+if __name__ == "__main__":
+    extract_all_query_features()
     # x = feature_extractor.encode_text_query(["Chef makes pizza and cuts it up.", "Chef makes pizza and cuts"])
     # print(x)
