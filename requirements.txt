@@ -80,3 +80,4 @@ wget
 zipp
 ftfy
 openai
+salesforce-lavis

@@ -30,9 +30,9 @@ fi
 
 # text features
 if [[ ${t_feat_type} == "clip" ]]; then
-  t_feat_dir=${feat_root}/clip_text_features/
+#  t_feat_dir=${feat_root}/clip_text_features/
 #  t_feat_dir=${feat_root}/clip_aug_text_features/
-#  t_feat_dir=${feat_root}/clip_aug_text_features_openai/
+  t_feat_dir=${feat_root}/clip_aug_text_features_openai/
   t_feat_dim=512
 else
   echo "Wrong arg for t_feat_type."
