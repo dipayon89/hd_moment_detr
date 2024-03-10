@@ -880,6 +880,68 @@ class CrossAttentionLayer(nn.Module):
         return out
 
 
+class CrossAttentionLayerNew(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
+                 activation="relu"):
+        super().__init__()
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn_1 = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn_2 = MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
+        # self.pooling = nn.MaxPool1d(3, stride=2, padding=1)
+        self.conv = nn.Conv1d(d_model*2, d_model, kernel_size=3, padding=1)
+        self.linear1 = nn.Linear(d_model, d_model)
+        self.linear2 = nn.Linear(d_model, dim_feedforward)
+        self.linear3 = nn.Linear(dim_feedforward, d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+        self.dropout4 = nn.Dropout(dropout)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+
+        self.activation = _get_activation_fn(activation)
+
+    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
+        return tensor if pos is None else tensor + pos
+
+    def forward(self, src1, src2,
+                src1_mask: Optional[Tensor] = None,
+                src2_mask: Optional[Tensor] = None,
+                src1_key_padding_mask: Optional[Tensor] = None,
+                src2_key_padding_mask: Optional[Tensor] = None,
+                pos1: Optional[Tensor] = None,
+                pos2: Optional[Tensor] = None):
+        k = v = self.with_pos_embed(src2, pos2)
+        out1 = self.cross_attn_1(query=src1, key=k, value=v, attn_mask=src2_mask,
+                                 key_padding_mask=src2_key_padding_mask)[0]
+        out1 = self.norm1(self.linear1(self.dropout1(out1)))
+        # print("out1.shape", out1.shape)
+        out2 = self.self_attn(query=out1, key=out1, value=out1, attn_mask=src2_mask,
+                              key_padding_mask=src1_key_padding_mask)[0]
+        out2 = self.dropout2(out2)
+
+        # print("out2.shape", out2.shape)
+        x = torch.cat([out1, out2], dim=2)
+        x = x.permute(0, 2, 1)
+        x = self.conv(x)
+        x = x.permute(0, 2, 1)
+        out3 = self.norm2(x)
+
+        # print("out3.shape", out3.shape)
+        k = v = self.with_pos_embed(src1, pos1)
+
+        out = self.cross_attn_2(query=out3, key=k, value=v, attn_mask=src1_mask,
+                                key_padding_mask=src1_key_padding_mask)[0]
+        # print("out.shape", out.shape)
+        out1 = self.linear3(self.dropout3(self.activation(self.linear2(out))))
+        out = out + self.dropout4(out1)
+        out = self.norm3(out)
+        # print("out.shape", out.shape)
+        return out
+
+
 class VTTransformerDecoder(nn.Module):
 
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False,

@@ -7,9 +7,9 @@ results_root=results
 exp_id=exp_slowfast_clip_parallel_conv_prediction_head_triplet_span_new
 
 ######## data paths
-#train_path=data/highlight_train_release.jsonl
+train_path=data/highlight_train_release.jsonl
 #train_path=data/highlight_train_release_paraphrased.jsonl
-train_path=data/highlight_train_release_paraphrased_openai.jsonl
+#train_path=data/highlight_train_release_paraphrased_openai.jsonl
 eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
