@@ -1,13 +1,18 @@
+import io
+
 import torch
 import os
 import numpy as np
 import ffmpeg
 import math
+
+from PIL import Image
+
 from run_on_video import clip
 
 
 class ClipFeatureExtractor:
-    def __init__(self, framerate=1/2, size=224, centercrop=True, model_name_or_path="ViT-B/32", device="cuda"):
+    def __init__(self, framerate=1 / 2, size=224, centercrop=True, model_name_or_path="ViT-B/32", device="cuda"):
         self.video_loader = VideoLoader(framerate=framerate, size=size, centercrop=centercrop)
         print("Loading CLIP models")
         self.clip_extractor, _ = clip.load(model_name_or_path, device=device, jit=False)
@@ -24,7 +29,7 @@ class ClipFeatureExtractor:
         video_features = []
         for i in range(n_batch):
             st_idx = i * bsz
-            ed_idx = (i+1) * bsz
+            ed_idx = (i + 1) * bsz
             _video_frames = video_frames[st_idx:ed_idx].to(self.device)
             _video_features = self.clip_extractor.encode_image(_video_frames)
             video_features.append(_video_features)
@@ -38,7 +43,7 @@ class ClipFeatureExtractor:
         text_features = []
         for i in range(n_batch):
             st_idx = i * bsz
-            ed_idx = (i+1) * bsz
+            ed_idx = (i + 1) * bsz
             encoded_texts = self.tokenizer(text_list[st_idx:ed_idx], context_length=77).to(self.device)
             output = self.clip_extractor.encode_text(encoded_texts)
             valid_lengths = (encoded_texts != 0).sum(1).tolist()
@@ -54,7 +59,7 @@ class ClipFeatureExtractor:
         text_features = []
         for i in range(n_batch):
             st_idx = i * bsz
-            ed_idx = (i+1) * bsz
+            ed_idx = (i + 1) * bsz
             encoded_texts = self.tokenizer(text_list[st_idx:ed_idx], context_length=77).to(self.device)
             output = self.clip_extractor.encode_text(encoded_texts)
             valid_lengths = (encoded_texts != 0).sum(1).tolist()
@@ -62,7 +67,8 @@ class ClipFeatureExtractor:
             batch_last_hidden_states = output["last_hidden_state"]
             batch_pooler_output = output["pooler_output"]
             for j, valid_len in enumerate(valid_lengths):
-                text_features.append(dict(last_hidden_state=batch_last_hidden_states[j, :valid_len], pooler_output=batch_pooler_output[j]))
+                text_features.append(dict(last_hidden_state=batch_last_hidden_states[j, :valid_len],
+                                          pooler_output=batch_pooler_output[j]))
         return text_features  # List([L_j, d]) torch tensor
 
 
@@ -109,14 +115,29 @@ class Preprocessing(object):
         return tensor
 
 
+def generate_image_from_raw_data(raw_data, width, height):
+    image = Image.new("RGB", (width, height))
+    color = [tuple(pixel) for row in raw_data for pixel in row]
+    image.putdata(color)
+    # image.show()
+    return image
+
+
+def ffmpeg_frame_to_pil(frame_data):
+    # Convert frame bytes to PIL Image
+    image = Image.open(io.BytesIO(frame_data))
+    return image.convert("RGB")
+
+
 class VideoLoader:
     """Pytorch video loader.
     Copied and modified from:
     https://github.com/linjieli222/HERO_Video_Feature_Extractor/blob/main/clip/video_loader.py
     """
+
     def __init__(
             self,
-            framerate=1/2,
+            framerate=1 / 2,
             size=224,
             centercrop=True,
     ):
@@ -160,8 +181,8 @@ class VideoLoader:
         try:
             duration = info["duration"]
             fps = self.framerate
-            if duration > 0 and duration < 1/fps+0.1:
-                fps = 2/max(int(duration), 1)
+            if duration > 0 and duration < 1 / fps + 0.1:
+                fps = 2 / max(int(duration), 1)
                 print(duration, fps)
         except Exception:
             fps = self.framerate
@@ -185,4 +206,72 @@ class VideoLoader:
             [-1, height, width, 3])
         video = torch.from_numpy(video.astype('float32'))
         video = video.permute(0, 3, 1, 2)
+        return video
+
+    def extract_all_frames(self, video_path):
+        frames = []
+
+        # Open the video file
+        probe = ffmpeg.probe(video_path)
+        video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+        duration = float(video_info['duration'])
+        try:
+            fps = self.framerate
+            if duration > 0 and duration < 1 / fps + 0.1:
+                fps = 2 / max(int(duration), 1)
+                print(duration, fps)
+        except Exception:
+            fps = self.framerate
+
+        # Extract frames at each second of the video
+        for time in range(int(duration * fps)):
+            frame_data, _ = (
+                ffmpeg
+                .input(video_path, ss=time / fps)  # ss parameter seeks to the specific time
+                .output('pipe:', vframes=1, format='image2', vcodec='mjpeg')
+                .run(capture_stdout=True)
+            )
+
+            # Convert frame data to PIL Image
+            image = ffmpeg_frame_to_pil(frame_data)
+            frames.append(image)
+
+        return frames
+
+    def read_raw_image_from_video_file(self, video_path):
+        try:
+            info = self._get_video_info(video_path)
+            h, w = info["height"], info["width"]
+        except Exception:
+            print('ffprobe failed at: {}'.format(video_path))
+            return {'video': torch.zeros(1), 'input': video_path,
+                    'info': {}}
+        height, width = self._get_output_dim(h, w)
+        try:
+            duration = info["duration"]
+            fps = self.framerate
+            if duration > 0 and duration < 1 / fps + 0.1:
+                fps = 2 / max(int(duration), 1)
+                print(duration, fps)
+        except Exception:
+            fps = self.framerate
+        cmd = (
+            ffmpeg
+            .input(video_path)
+            .filter('fps', fps=fps)
+            .filter('scale', width, height)
+        )
+        if self.centercrop:
+            x = int((width - self.size) / 2.0)
+            y = int((height - self.size) / 2.0)
+            cmd = cmd.crop(x, y, self.size, self.size)
+        out, _ = (
+            cmd.output('pipe:', format='rawvideo', pix_fmt='rgb24')
+            .run(capture_stdout=True, quiet=True)
+        )
+        if self.centercrop and isinstance(self.size, int):
+            height, width = self.size, self.size
+        video = np.frombuffer(out, np.uint8).reshape(
+            [-1, height, width, 3])
+        video = [generate_image_from_raw_data(frame, width, height) for frame in video]
         return video

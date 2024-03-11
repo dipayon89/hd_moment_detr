@@ -228,7 +228,7 @@ def start_inference():
         dset_name=opt.dset_name,
         data_path=opt.eval_path,
         v_feat_dirs=opt.v_feat_dirs,
-        q_feat_dir=opt.t_feat_dir,
+        q_feat_dirs=opt.t_feat_dirs,
         q_feat_type="last_hidden_state",
         max_q_l=opt.max_q_l,
         max_v_l=opt.max_v_l,

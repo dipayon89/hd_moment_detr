@@ -25,7 +25,7 @@ class StartEndDataset(Dataset):
     }
     """
 
-    def __init__(self, dset_name, data_path, v_feat_dirs, q_feat_dir,
+    def __init__(self, dset_name, data_path, v_feat_dirs, q_feat_dirs,
                  q_feat_type="last_hidden_state",
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
@@ -35,7 +35,8 @@ class StartEndDataset(Dataset):
         self.data_ratio = data_ratio
         self.v_feat_dirs = v_feat_dirs \
             if isinstance(v_feat_dirs, list) else [v_feat_dirs]
-        self.q_feat_dir = q_feat_dir
+        self.q_feat_dirs = q_feat_dirs \
+            if isinstance(q_feat_dirs, list) else [q_feat_dirs]
         self.q_feat_type = q_feat_type
         self.max_q_l = max_q_l
         self.max_v_l = max_v_l
@@ -227,15 +228,18 @@ class StartEndDataset(Dataset):
 
     def _get_query_feat_by_qid(self, qid, aug_id=0):
         aug = f"_{aug_id}" if aug_id > 0 else ""
-        q_feat_path = join(self.q_feat_dir, f"qid{qid}{aug}.npz")
-        q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
-        if self.q_feat_type == "last_hidden_state":
-            q_feat = q_feat[:self.max_q_l]
-        if self.normalize_t:
-            q_feat = l2_normalize_np_array(q_feat)
-        if self.txt_drop_ratio > 0:
-            q_feat = self.random_drop_rows(q_feat)
-        return torch.from_numpy(q_feat)  # (D, ) or (Lq, D)
+        q_feat_list = []
+        for _feat_dir in self.q_feat_dirs:
+            q_feat_path = join(_feat_dir, f"qid{qid}{aug}.npz")
+            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
+            if self.normalize_v:
+                q_feat = l2_normalize_np_array(q_feat)
+            q_feat_list.append(q_feat)
+        # some features are slightly longer than the others
+        min_len = min([len(e) for e in q_feat_list])
+        q_feat_list = [e[:min_len] for e in q_feat_list]
+        q_feat = np.concatenate(q_feat_list, axis=1)
+        return torch.from_numpy(q_feat)  # (Lv, D)
 
     def random_drop_rows(self, embeddings):
         """randomly mask num_drop rows in embeddings to be zero.

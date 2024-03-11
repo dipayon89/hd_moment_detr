@@ -77,11 +77,14 @@ class BaseOptions(object):
                                     ],
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
-        parser.add_argument("--t_feat_dir", type=str,
-                            default="../QVHighlights/features/clip_aug_text_features/",
+        parser.add_argument("--t_feat_dirs", type=str, nargs="+",
+                            default=[
+                                        "../QVHighlights/features/clip_aug_text_features_openai/",
+                                        "../QVHighlights/features/blip_aug_text_features_openai/"
+                                    ],
                             help="text/query feature dir")
         parser.add_argument("--v_feat_dim", type=int, default=2816, help="video feature dim")
-        parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
+        parser.add_argument("--t_feat_dim", type=int, default=1280, help="text/query feature dim")
         parser.add_argument("--ctx_mode", type=str, default="video_tef")
 
         # Model config
