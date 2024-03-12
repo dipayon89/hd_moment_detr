@@ -1,5 +1,6 @@
 import io
 import math
+import os
 
 import numpy as np
 import torch
@@ -22,6 +23,9 @@ model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_fea
 # sample = {"image": image, "text_input": [text_input]}
 video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True)
 
+v_input_dir = "../QVHighlights/processed_videos/"
+v_feat_dir = "../QVHighlights/features/blip_video_features/"
+q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
 
 def encode_text_query(batch):
     batch_output = []
@@ -86,8 +90,8 @@ def generate_batched_query(batch):
     return batch['query']
 
 
-def generate_batched_vid(batch):
-    return batch['vid']
+def generate_batched_vid(v_feat_dir, batch):
+    return [vid for vid in batch['vid'] if not is_file_present(v_feat_dir, vid)]
 
 
 def save_query_features(batch, batch_result, q_feat_dir, training=True):
@@ -107,8 +111,16 @@ def save_query_features(batch, batch_result, q_feat_dir, training=True):
 def save_video_features(batch, batch_result, v_feat_dir):
     for i, result in enumerate(batch_result):
         vid = batch["vid"][i]
-        q_feat_path = join(v_feat_dir, f"{vid}.npz")
-        np.savez_compressed(q_feat_path, features=result.cpu())
+        v_feat_path = join(v_feat_dir, f"{vid}.npz")
+        np.savez_compressed(v_feat_path, features=result.cpu())
+
+
+
+# write a code to check if a file is present in the directory
+# if not present, then only extract the features
+def is_file_present(v_feat_dir, vid):
+    file_path = join(v_feat_dir, f"{vid}.npz")
+    return os.path.exists(file_path)
 
 
 def collate_fn(batch):
@@ -127,58 +139,38 @@ def collate_fn(batch):
     return collated_dict
 
 
-def extract_train_video_features():
-    input_dir = "../QVHighlights/processed_videos/"
-    input_file = "data/highlight_train_release.jsonl"
-    v_feat_dir = "../QVHighlights/features/blip_video_features/"
-
+def extract_video_features(input_file):
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
 
     for batch in tqdm(dataloader):
-        batch_vid = generate_batched_vid(batch)
-        # print(batch_prompt)
-        batch_result = encode_video_query(input_dir, batch_vid)
+        batch_vid = generate_batched_vid(v_feat_dir, batch)
+        if len(batch_vid) == 0:
+            print("All files present:", batch_vid)
+            continue
+        print("Processing:", batch_vid)
+        batch_result = encode_video_query(v_input_dir, batch_vid)
         # print(batch_result)
         save_video_features(batch, batch_result, v_feat_dir)
+
+
+def extract_train_video_features():
+    input_file = "data/highlight_train_release.jsonl"
+    extract_video_features(input_file)
+
 
 
 def extract_val_video_features():
-    input_dir = "../QVHighlights/processed_videos/"
     input_file = "data/highlight_val_release.jsonl"
-    v_feat_dir = "../QVHighlights/features/blip_video_features/"
-
-    dataset = QVHighlightsDataset(input_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
-
-    for batch in tqdm(dataloader):
-        batch_vid = generate_batched_vid(batch)
-        # print(batch_prompt)
-        batch_result = encode_video_query(input_dir, batch_vid)
-        # print(batch_result)
-        save_video_features(batch, batch_result, v_feat_dir)
+    extract_video_features(input_file)
 
 
 def extract_test_video_features():
-    input_dir = "../QVHighlights/processed_videos/"
     input_file = "data/highlight_test_release.jsonl"
-    v_feat_dir = "../QVHighlights/features/blip_video_features/"
-
-    dataset = QVHighlightsDataset(input_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
-
-    for batch in tqdm(dataloader):
-        batch_vid = generate_batched_vid(batch)
-        # print(batch_prompt)
-        batch_result = encode_video_query(input_dir, batch_vid)
-        # print(batch_result)
-        save_video_features(batch, batch_result, v_feat_dir)
+    extract_video_features(input_file)
 
 
-def extract_train_query_features():
-    input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
-    q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
-
+def extract_query_features(input_file):
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
 
@@ -190,40 +182,26 @@ def extract_train_query_features():
         save_query_features(batch, batch_result, q_feat_dir)
 
 
+def extract_train_query_features():
+    input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
+    extract_query_features(input_file)
+
+
+
 def extract_val_query_features():
     input_file = "data/highlight_val_release.jsonl"
-    q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
-
-    dataset = QVHighlightsDataset(input_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
-
-    for batch in tqdm(dataloader):
-        batch_query = generate_batched_query(batch)
-        # print(batch_prompt)
-        batch_result = encode_text_query(batch_query)
-        # print(batch_result)
-        save_query_features(batch, batch_result, q_feat_dir, False)
+    extract_query_features(input_file)
 
 
 def extract_test_query_features():
     input_file = "data/highlight_test_release.jsonl"
-    q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
-
-    dataset = QVHighlightsDataset(input_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
-
-    for batch in tqdm(dataloader):
-        batch_query = generate_batched_query(batch)
-        # print(batch_prompt)
-        batch_result = encode_text_query(batch_query)
-        # print(batch_result)
-        save_query_features(batch, batch_result, q_feat_dir, False)
+    extract_query_features(input_file)
 
 
 def extract_all_query_features():
-    extract_train_query_features()
-    extract_val_query_features()
-    extract_test_query_features()
+    # extract_train_query_features()
+    # extract_val_query_features()
+    # extract_test_query_features()
     extract_train_video_features()
     extract_val_video_features()
     extract_test_video_features()
