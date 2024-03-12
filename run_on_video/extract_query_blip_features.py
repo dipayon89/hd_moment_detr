@@ -110,8 +110,9 @@ def save_query_features(batch, batch_result, q_feat_dir, training=True):
 
 def save_video_features(batch, batch_result, v_feat_dir):
     for i, result in enumerate(batch_result):
-        vid = batch["vid"][i]
+        vid = batch[i]
         v_feat_path = join(v_feat_dir, f"{vid}.npz")
+        print("Saving:", v_feat_path)
         np.savez_compressed(v_feat_path, features=result.cpu())
 
 
@@ -151,7 +152,7 @@ def extract_video_features(input_file):
         print("Processing:", batch_vid)
         batch_result = encode_video_query(v_input_dir, batch_vid)
         # print(batch_result)
-        save_video_features(batch, batch_result, v_feat_dir)
+        save_video_features(batch_vid, batch_result, v_feat_dir)
 
 
 def extract_train_video_features():

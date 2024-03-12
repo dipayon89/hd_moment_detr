@@ -1,10 +1,10 @@
 dset_name=hl
 ctx_mode=video_tef
-v_feat_types=slowfast_clip
+v_feat_types=slowfast_clip_blip
 #v_feat_types=clip
 t_feat_types=clip_blip
 results_root=results
-exp_id=exp_slowfast_blip_serial_conv_prediction_head_parapharased
+exp_id=exp_slowfast_blip_tv_serial_conv_prediction_head_parapharased
 
 ######## data paths
 #train_path=data/highlight_train_release.jsonl
@@ -26,6 +26,10 @@ fi
 if [[ ${v_feat_types} == *"clip"* ]]; then
   v_feat_dirs+=(${feat_root}/clip_features)
   (( v_feat_dim += 512 ))
+fi
+if [[ ${v_feat_types} == *"blip"* ]]; then
+  v_feat_dirs+=(${feat_root}/blip_video_features)
+  (( v_feat_dim += 768 ))
 fi
 
 echo $v_feat_dim
