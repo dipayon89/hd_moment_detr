@@ -142,7 +142,7 @@ def collate_fn(batch):
 
 def extract_video_features(input_file):
     dataset = QVHighlightsDataset(input_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=collate_fn)
 
     for batch in tqdm(dataloader):
         batch_vid = generate_batched_vid(v_feat_dir, batch)
