@@ -217,7 +217,7 @@ def start_training():
         dset_name=opt.dset_name,
         data_path=opt.train_path,
         v_feat_dirs=opt.v_feat_dirs,
-        q_feat_dir=opt.t_feat_dir,
+        q_feat_dirs=opt.t_feat_dirs,
         q_feat_type="last_hidden_state",
         max_q_l=opt.max_q_l,
         max_v_l=opt.max_v_l,
@@ -237,7 +237,7 @@ def start_training():
     if opt.eval_path is not None:
         dataset_config["data_path"] = opt.eval_path
         dataset_config["txt_drop_ratio"] = 0
-        dataset_config["q_feat_dir"] = opt.t_feat_dir.replace("sub_features", "text_features")  # for pretraining
+        # dataset_config["q_feat_dirs"] = opt.t_feat_dir.replace("sub_features", "text_features")  # for pretraining
         # dataset_config["load_labels"] = False  # uncomment to calculate eval loss
         eval_dataset = StartEndDataset(**dataset_config)
     else:

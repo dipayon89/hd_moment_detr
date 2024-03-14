@@ -34,7 +34,7 @@ class BaseOptions(object):
         parser.add_argument("--exp_id", type=str, default="exp", help="id of this run, required at training")
         parser.add_argument("--seed", type=int, default=2018, help="random seed")
         parser.add_argument("--device", type=int, default=0, help="0 cuda, -1 cpu")
-        parser.add_argument("--num_workers", type=int, default=0,
+        parser.add_argument("--num_workers", type=int, default=4,
                             help="num subprocesses used to load the data, 0: use main process")
         parser.add_argument("--no_pin_memory", action="store_true",
                             help="Don't use pin_memory=True for dataloader. "
@@ -65,20 +65,26 @@ class BaseOptions(object):
         parser.add_argument("--clip_length", type=int, default=2)
         parser.add_argument("--max_windows", type=int, default=5)
 
-        parser.add_argument("--train_path", type=str, default="data/highlight_train_release.jsonl")
+        parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")
         parser.add_argument("--eval_path", type=str, default="data/highlight_val_release.jsonl",
                             help="Evaluating during training, for Dev set. If None, will only do training, ")
         parser.add_argument("--no_norm_vfeat", action="store_true", help="Do not do normalize video feat")
         parser.add_argument("--no_norm_tfeat", action="store_true", help="Do not do normalize text feat")
         parser.add_argument("--v_feat_dirs", type=str, nargs="+",
-                            default="../QVHighlights/features/clip_features",
+                            default=[
+                                        "../QVHighlights/features/slowfast_features",
+                                        "../QVHighlights/features/clip_features"
+                                    ],
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
-        parser.add_argument("--t_feat_dir", type=str,
-                            default="../QVHighlights/features/clip_text_features/",
+        parser.add_argument("--t_feat_dirs", type=str, nargs="+",
+                            default=[
+                                        "../QVHighlights/features/clip_aug_text_features_openai/",
+                                        "../QVHighlights/features/blip_aug_text_features_openai/"
+                                    ],
                             help="text/query feature dir")
-        parser.add_argument("--v_feat_dim", type=int, default=512, help="video feature dim")
-        parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
+        parser.add_argument("--v_feat_dim", type=int, default=2816, help="video feature dim")
+        parser.add_argument("--t_feat_dim", type=int, default=1280, help="text/query feature dim")
         parser.add_argument("--ctx_mode", type=str, default="video_tef")
 
         # Model config
@@ -172,7 +178,7 @@ class BaseOptions(object):
             saved_options = load_json(os.path.join(opt.model_dir, self.saved_option_filename))
             for arg in saved_options:  # use saved options to overwrite all BaseOptions args.
                 if arg not in ["results_root", "num_workers", "nms_thd", "debug",  # "max_before_nms", "max_after_nms"
-                               "max_pred_l", "min_pred_l",
+                               "max_pred_l", "min_pred_l", 'eval_split_name', 'eval_path',
                                "resume", "resume_all", "no_sort_results"]:
                     setattr(opt, arg, saved_options[arg])
             # opt.no_core_driver = True
