@@ -17,6 +17,7 @@ from moment_detr.config import BaseOptions
 from moment_detr.start_end_dataset import \
     StartEndDataset, start_end_collate, prepare_batch_inputs
 from moment_detr.inference import eval_epoch, start_inference, setup_model
+from moment_detr.start_end_dataset_new import StartEndDatasetNew
 from utils.basic_utils import AverageMeter, dict_to_markdown
 from utils.model_utils import count_parameters
 
@@ -213,33 +214,58 @@ def start_training():
         cudnn.benchmark = False
         cudnn.deterministic = True
 
-    dataset_config = dict(
-        dset_name=opt.dset_name,
-        data_path=opt.train_path,
-        v_feat_dirs=opt.v_feat_dirs,
-        q_feat_dirs=opt.t_feat_dirs,
-        q_feat_type="last_hidden_state",
-        max_q_l=opt.max_q_l,
-        max_v_l=opt.max_v_l,
-        ctx_mode=opt.ctx_mode,
-        data_ratio=opt.data_ratio,
-        normalize_v=not opt.no_norm_vfeat,
-        normalize_t=not opt.no_norm_tfeat,
-        clip_len=opt.clip_length,
-        max_windows=opt.max_windows,
-        span_loss_type=opt.span_loss_type,
-        txt_drop_ratio=opt.txt_drop_ratio
-    )
-
-    dataset_config["data_path"] = opt.train_path
-    train_dataset = StartEndDataset(**dataset_config)
+    if opt.dset_name == "hl":
+        dataset_config = dict(
+            dset_name=opt.dset_name,
+            data_path=opt.train_path,
+            v_feat_dirs=opt.v_feat_dirs,
+            q_feat_dirs=opt.t_feat_dirs,
+            q_feat_type="last_hidden_state",
+            max_q_l=opt.max_q_l,
+            max_v_l=opt.max_v_l,
+            ctx_mode=opt.ctx_mode,
+            data_ratio=opt.data_ratio,
+            normalize_v=not opt.no_norm_vfeat,
+            normalize_t=not opt.no_norm_tfeat,
+            clip_len=opt.clip_length,
+            max_windows=opt.max_windows,
+            span_loss_type=opt.span_loss_type,
+            txt_drop_ratio=opt.txt_drop_ratio,
+        )
+        dataset_config["data_path"] = opt.train_path
+        train_dataset = StartEndDataset(**dataset_config)
+    else:
+        dataset_config = dict(
+            dset_name=opt.dset_name,
+            data_path=opt.train_path,
+            v_feat_dirs=opt.v_feat_dirs,
+            q_feat_dir=opt.t_feat_dirs,
+            q_feat_type="last_hidden_state",
+            max_q_l=opt.max_q_l,
+            max_v_l=opt.max_v_l,
+            ctx_mode=opt.ctx_mode,
+            data_ratio=opt.data_ratio,
+            normalize_v=not opt.no_norm_vfeat,
+            normalize_t=not opt.no_norm_tfeat,
+            clip_len=opt.clip_length,
+            max_windows=opt.max_windows,
+            span_loss_type=opt.span_loss_type,
+            txt_drop_ratio=opt.txt_drop_ratio,
+            dset_domain=opt.dset_domain,
+        )
+        dataset_config["data_path"] = opt.train_path
+        train_dataset = StartEndDatasetNew(**dataset_config)
 
     if opt.eval_path is not None:
         dataset_config["data_path"] = opt.eval_path
         dataset_config["txt_drop_ratio"] = 0
         # dataset_config["q_feat_dirs"] = opt.t_feat_dirs.replace("sub_features", "text_features")  # for pretraining
         # dataset_config["load_labels"] = False  # uncomment to calculate eval loss
-        eval_dataset = StartEndDataset(**dataset_config)
+
+        if opt.dset_name == "hl":
+            eval_dataset = StartEndDataset(**dataset_config)
+        else:
+            eval_dataset = StartEndDatasetNew(**dataset_config)
     else:
         eval_dataset = None
 
@@ -248,11 +274,11 @@ def start_training():
     count_parameters(model)
     logger.info("Start Training...")
     train(model, criterion, optimizer, lr_scheduler, train_dataset, eval_dataset, opt)
-    return opt.ckpt_filepath.replace(".ckpt", "_best.ckpt"), opt.eval_split_name, opt.eval_path, opt.debug
+    return opt.ckpt_filepath.replace(".ckpt", "_best.ckpt"), opt.eval_split_name, opt.eval_path, opt.debug, opt
 
 
 if __name__ == '__main__':
-    best_ckpt_path, eval_split_name, eval_path, debug = start_training()
+    best_ckpt_path, eval_split_name, eval_path, debug, opt = start_training()
     if not debug:
         input_args = ["--resume", best_ckpt_path,
                       "--eval_split_name", eval_split_name,
@@ -263,4 +289,4 @@ if __name__ == '__main__':
         logger.info("\n\n\nFINISHED TRAINING!!!")
         logger.info("Evaluating model at {}".format(best_ckpt_path))
         logger.info("Input args {}".format(sys.argv[1:]))
-        start_inference()
+        start_inference(opt)

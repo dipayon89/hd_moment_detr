@@ -17,7 +17,7 @@ from run_on_video.data_utils import VideoLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor", model_type="base",
+model, vis_processors, txt_processors = load_model_and_preprocess(name="blip2_feature_extractor", model_type="pretrain",
                                                                   is_eval=True, device=device)
 # text_input = txt_processors["eval"](caption)
 # sample = {"image": image, "text_input": [text_input]}
@@ -171,7 +171,7 @@ def extract_test_video_features():
     extract_video_features(input_file)
 
 
-def extract_query_features(input_file):
+def extract_query_features(input_file, TRAINING=True):
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
 
@@ -180,7 +180,7 @@ def extract_query_features(input_file):
         # print(batch_prompt)
         batch_result = encode_text_query(batch_query)
         # print(batch_result)
-        save_query_features(batch, batch_result, q_feat_dir)
+        save_query_features(batch, batch_result, q_feat_dir, training=TRAINING)
 
 
 def extract_train_query_features():
@@ -191,12 +191,12 @@ def extract_train_query_features():
 
 def extract_val_query_features():
     input_file = "data/highlight_val_release.jsonl"
-    extract_query_features(input_file)
+    extract_query_features(input_file, False)
 
 
 def extract_test_query_features():
     input_file = "data/highlight_test_release.jsonl"
-    extract_query_features(input_file)
+    extract_query_features(input_file, False)
 
 
 def extract_all_query_features():

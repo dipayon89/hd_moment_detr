@@ -21,7 +21,10 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", default="hl", type=str, choices=["hl"])
+        parser.add_argument("--dset_name", default='hl', type=str, choices=["hl", 'tvsum', 'charadesSTA', 'tacos', 'nlq','youtube_uni'])
+        parser.add_argument("--dset_domain", type=str, 
+                            help="Domain to train for tvsum dataset. (Only used for tvsum and youtube-hl)")
+        
         parser.add_argument("--eval_split_name", type=str, default="val",
                             help="should match keys in video_duration_idx_path, must set for VCMR")
         parser.add_argument("--debug", action="store_true",
@@ -34,7 +37,7 @@ class BaseOptions(object):
         parser.add_argument("--exp_id", type=str, default="exp", help="id of this run, required at training")
         parser.add_argument("--seed", type=int, default=2018, help="random seed")
         parser.add_argument("--device", type=int, default=0, help="0 cuda, -1 cpu")
-        parser.add_argument("--num_workers", type=int, default=4,
+        parser.add_argument("--num_workers", type=int, default=0,
                             help="num subprocesses used to load the data, 0: use main process")
         parser.add_argument("--no_pin_memory", action="store_true",
                             help="Don't use pin_memory=True for dataloader. "
@@ -50,6 +53,8 @@ class BaseOptions(object):
         parser.add_argument("--bsz", type=int, default=32, help="mini-batch size")
         parser.add_argument("--eval_bsz", type=int, default=100,
                             help="mini-batch size at inference, for query")
+        parser.add_argument("--eval_epoch", type=int, default=5,
+                            help="inference epoch")
         parser.add_argument("--grad_clip", type=float, default=0.1, help="perform gradient clip, -1: disable")
         parser.add_argument("--eval_untrained", action="store_true", help="Evaluate on un-trained model")
         parser.add_argument("--resume", type=str, default=None,
@@ -62,7 +67,7 @@ class BaseOptions(object):
         # Data config
         parser.add_argument("--max_q_l", type=int, default=32)
         parser.add_argument("--max_v_l", type=int, default=75)
-        parser.add_argument("--clip_length", type=int, default=2)
+        parser.add_argument("--clip_length", type=float, default=2)
         parser.add_argument("--max_windows", type=int, default=5)
 
         parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")
@@ -91,10 +96,18 @@ class BaseOptions(object):
         parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                             help="Type of positional embedding to use on top of the image features")
         # * Transformer
-        parser.add_argument('--enc_layers', default=2, type=int,
+        parser.add_argument('--enc_layers', default=3, type=int,
                             help="Number of encoding layers in the transformer")
-        parser.add_argument('--dec_layers', default=2, type=int,
+        parser.add_argument('--dec_layers', default=3, type=int,
                             help="Number of decoding layers in the transformer")
+        parser.add_argument('--t2v_layers', default=2, type=int,
+                            help="Number of decoding layers in the transformer")
+        parser.add_argument('--sent_layers', default=1, type=int,
+                            help="Number of decoding layers in the transformer")
+        parser.add_argument('--moment_layers', default=1, type=int,
+                            help="Number of decoding layers in the transformer")
+        parser.add_argument('--dummy_layers', default=2, type=int,
+                            help="Number of encoding layers in the transformer")
         parser.add_argument('--dim_feedforward', default=1024, type=int,
                             help="Intermediate size of the feedforward layers in the transformer blocks")
         parser.add_argument('--hidden_dim', default=256, type=int,
@@ -110,14 +123,19 @@ class BaseOptions(object):
                             help="Number of attention heads inside the transformer's attentions")
         parser.add_argument('--num_queries', default=10, type=int,
                             help="Number of query slots")
+        parser.add_argument('--num_dummies', default=45, type=int,
+                            help="Number of dummy tokens")
+        parser.add_argument('--total_prompts', default=10, type=int,
+                            help="Number of query slots")
+        parser.add_argument('--num_prompts', default=1, type=int,
+                            help="Number of dummy tokens")
         parser.add_argument('--pre_norm', action='store_true')
         # other model configs
         parser.add_argument("--n_input_proj", type=int, default=2, help="#layers to encoder input")
         parser.add_argument("--contrastive_hdim", type=int, default=64, help="dim for contrastive embeddings")
         parser.add_argument("--temperature", type=float, default=0.07, help="temperature nce contrastive_align_loss")
         # Loss
-        parser.add_argument("--lw_saliency", type=float, default=1.,
-                            help="weight for saliency loss, set to 0 will ignore")
+
         parser.add_argument("--saliency_margin", type=float, default=0.2)
         parser.add_argument('--no_aux_loss', dest='aux_loss', action='store_false',
                             help="Disables auxiliary decoding losses (loss at each layer)")
@@ -134,6 +152,14 @@ class BaseOptions(object):
                             help="Class coefficient in the matching cost")
 
         # * Loss coefficients
+        parser.add_argument("--lw_saliency", type=float, default=1.,
+                            help="weight for saliency loss, set to 0 will ignore")
+        parser.add_argument("--lw_wattn", type=float, default=1.,
+                            help="weight for saliency loss, set to 0 will ignore")
+        parser.add_argument("--lw_ms_align", type=float, default=1.,
+                            help="weight for saliency loss, set to 0 will ignore")
+        parser.add_argument("--lw_distill", type=float, default=1.,
+                            help="weight for saliency loss, set to 0 will ignore")
         parser.add_argument('--span_loss_coef', default=10, type=float)
         parser.add_argument('--giou_loss_coef', default=1, type=float)
         parser.add_argument('--label_loss_coef', default=4, type=float)
@@ -162,7 +188,7 @@ class BaseOptions(object):
             option_file_path = os.path.join(opt.results_dir, self.saved_option_filename)  # not yaml file indeed
             save_json(args, option_file_path, save_pretty=True)
 
-    def parse(self):
+    def parse(self, a_feat_dir=None):
         if not self.initialized:
             self.initialize()
         opt = self.parser.parse_args()
@@ -175,6 +201,8 @@ class BaseOptions(object):
             # modify model_dir to absolute path
             # opt.model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", opt.model_dir)
             opt.model_dir = os.path.dirname(opt.resume)
+            if a_feat_dir is not None:
+                opt.a_feat_dir = a_feat_dir
             saved_options = load_json(os.path.join(opt.model_dir, self.saved_option_filename))
             for arg in saved_options:  # use saved options to overwrite all BaseOptions args.
                 if arg not in ["results_root", "num_workers", "nms_thd", "debug",  # "max_before_nms", "max_after_nms"
@@ -233,3 +261,4 @@ class TestOptions(BaseOptions):
                                  help="dir to save results, if not set, fall back to training results_dir")
         self.parser.add_argument("--model_dir", type=str,
                                  help="dir contains the model file, will be converted to absolute path afterwards")
+
