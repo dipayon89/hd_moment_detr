@@ -149,7 +149,10 @@ class MomentDETR(nn.Module):
             ))
 
         ### Neg Pairs ###
-        mixer = random.randint(1, bs-1)
+        if bs > 4:
+            mixer = random.randint(1, bs-1)
+        else:
+            mixer = 1
 
         src_txt_neg = torch.cat([src_txt[mixer:], src_txt[0:mixer]], dim=0)
         src_txt_mask_neg = torch.cat([src_txt_mask[mixer:], src_txt_mask[0:mixer]], dim=0)
@@ -207,7 +210,7 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, matcher, weight_dict, eos_coef, losses, temperature, span_loss_type, max_v_l, alpha=0.5,
-                 saliency_margin=1):
+                 saliency_margin=1, use_matcher=True):
         """ Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -237,6 +240,9 @@ class SetCriterion(nn.Module):
         empty_weight[-1] = self.eos_coef  # lower weight for background (index 1, foreground index 0)
         self.register_buffer('empty_weight', empty_weight)
 
+        # for tvsum,
+        self.use_matcher = use_matcher
+
     def loss_spans(self, outputs, targets, indices):
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
            targets dicts must contain the key "spans" containing a tensor of dim [nb_tgt_spans, 2]
@@ -264,13 +270,13 @@ class SetCriterion(nn.Module):
             # loss_giou = 1 - torch.diag(generalized_temporal_iou(src_span_indices, tgt_span_indices))
             loss_giou = loss_span.new_zeros([1])
 
-        neg_spans = outputs['pred_spans_neg'][idx]  # (#spans, max_v_l * 2)
-        loss_span_triplet = F.triplet_margin_loss(tgt_spans, src_spans, neg_spans, margin=self.alpha)
+        # neg_spans = outputs['pred_spans_neg'][idx]  # (#spans, max_v_l * 2)
+        # loss_span_triplet = F.triplet_margin_loss(tgt_spans, src_spans, neg_spans, margin=self.alpha)
 
         losses = {}
         losses['loss_span'] = loss_span.mean()
         losses['loss_giou'] = loss_giou.mean()
-        losses['loss_span_triplet'] = loss_span_triplet.mean()
+        # losses['loss_span_triplet'] = loss_span_triplet.mean()
         return losses
 
     def loss_labels(self, outputs, targets, indices, log=True):
@@ -457,11 +463,17 @@ class SetCriterion(nn.Module):
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list(tuples), each tuple is (pred_span_indices, tgt_span_indices)
-        indices = self.matcher(outputs_without_aux, targets)
+        # only for HL, do not use matcher
+        if self.use_matcher:
+            indices = self.matcher(outputs_without_aux, targets)
+            losses_target = self.losses
+        else:
+            indices = None
+            losses_target = ["saliency"]
 
         # Compute all the requested losses
         losses = {}
-        for loss in self.losses:
+        for loss in losses_target:
             losses.update(self.get_loss(loss, outputs, targets, indices))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
@@ -469,12 +481,27 @@ class SetCriterion(nn.Module):
             for i, aux_outputs in enumerate(outputs['aux_outputs']):
                 indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
+                    if self.use_matcher:
+                        indices = self.matcher(aux_outputs, targets)
+                        losses_target = self.losses
+                    else:
+                        indices = None
+                        losses_target = ["saliency", "ms_align", "distill", "orthogonal_dummy"]
                     if "saliency" == loss:  # skip as it is only in the top layer
                         continue
-                    kwargs = {}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, **kwargs)
-                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
-                    losses.update(l_dict)
+                    for loss in losses_target:
+                        if "saliency" == loss:  # skip as it is only in the top layer
+                            continue
+                        if "ms_align" == loss:
+                            continue
+                        if "distill" == loss:
+                            continue
+                        if "orthogonal_dummy" == loss:
+                            continue
+                        kwargs = {}
+                        l_dict = self.get_loss(loss, aux_outputs, targets, indices, **kwargs)
+                        l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
+                        losses.update(l_dict)
 
         return losses
 
@@ -587,11 +614,13 @@ def build_model(args):
     losses = ['spans', 'labels', 'saliency']
     if args.contrastive_align_loss:
         losses += ["contrastive_align"]
+
+    use_matcher = not (args.dset_name in ['youtube_uni', 'tvsum'])
     criterion = SetCriterion(
         matcher=matcher, weight_dict=weight_dict, losses=losses,
         eos_coef=args.eos_coef, temperature=args.temperature,
         span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
-        saliency_margin=args.saliency_margin
+        saliency_margin=args.saliency_margin, use_matcher=use_matcher
     )
     criterion.to(device)
     return model, criterion

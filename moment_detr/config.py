@@ -21,8 +21,8 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", default='hl', type=str, choices=["hl", 'tvsum', 'charadesSTA', 'tacos', 'nlq','youtube_uni'])
-        parser.add_argument("--dset_domain", type=str, 
+        parser.add_argument("--dset_name", default='tvsum', type=str, choices=["hl", 'tvsum', 'charadesSTA', 'tacos', 'nlq','youtube_uni'])
+        parser.add_argument("--dset_domain", type=str, default='BK',
                             help="Domain to train for tvsum dataset. (Only used for tvsum and youtube-hl)")
         
         parser.add_argument("--eval_split_name", type=str, default="val",
@@ -66,30 +66,47 @@ class BaseOptions(object):
 
         # Data config
         parser.add_argument("--max_q_l", type=int, default=32)
-        parser.add_argument("--max_v_l", type=int, default=75)
+        parser.add_argument("--max_v_l", type=int, default=1000)
         parser.add_argument("--clip_length", type=float, default=2)
         parser.add_argument("--max_windows", type=int, default=5)
 
-        parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")
-        parser.add_argument("--eval_path", type=str, default="data/highlight_val_release.jsonl",
+        parser.add_argument("--train_path", type=str, default="data/tvsum/tvsum_train.jsonl")
+        parser.add_argument("--eval_path", type=str, default="data/tvsum/tvsum_val.jsonl",
                             help="Evaluating during training, for Dev set. If None, will only do training, ")
+        # parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")
+        # parser.add_argument("--eval_path", type=str, default="data/highlight_val_release.jsonl",
+        #                     help="Evaluating during training, for Dev set. If None, will only do training, ")
         parser.add_argument("--no_norm_vfeat", action="store_true", help="Do not do normalize video feat")
         parser.add_argument("--no_norm_tfeat", action="store_true", help="Do not do normalize text feat")
+        # parser.add_argument("--v_feat_dirs", type=str, nargs="+",
+        #                     default=[
+        #                                 "../QVHighlights/features/slowfast_features",
+        #                                 "../QVHighlights/features/clip_features"
+        #                             ],
+        #                     help="video feature dirs. If more than one, will concat their features. "
+        #                          "Note that sub ctx features are also accepted here.")
+        # parser.add_argument("--t_feat_dir", type=str, help="text/query feature dir")
+        # parser.add_argument("--t_feat_dirs", type=str, nargs="+",
+        #                     default=[
+        #                                 "../QVHighlights/features/clip_aug_text_features_openai/",
+        #                                 "../QVHighlights/features/blip_aug_text_features_openai/"
+        #                             ],
+        #                     help="text/query feature dir")
         parser.add_argument("--v_feat_dirs", type=str, nargs="+",
                             default=[
-                                        "../QVHighlights/features/slowfast_features",
-                                        "../QVHighlights/features/clip_features"
+                                        "../Datasets/tvsum/video_features",
                                     ],
                             help="video feature dirs. If more than one, will concat their features. "
                                  "Note that sub ctx features are also accepted here.")
+        parser.add_argument("--t_feat_dir", type=str, help="text/query feature dir", default="../Datasets/tvsum/query_features")
         parser.add_argument("--t_feat_dirs", type=str, nargs="+",
                             default=[
-                                        "../QVHighlights/features/clip_aug_text_features_openai/",
-                                        "../QVHighlights/features/blip_aug_text_features_openai/"
+                                        "../Datasets/tvsum/video_features",
                                     ],
                             help="text/query feature dir")
-        parser.add_argument("--v_feat_dim", type=int, default=2816, help="video feature dim")
-        parser.add_argument("--t_feat_dim", type=int, default=1280, help="text/query feature dim")
+        parser.add_argument("--a_feat_dir", type=int, default=2048, help="video feature dim")
+        parser.add_argument("--v_feat_dim", type=int, default=2048, help="video feature dim")
+        parser.add_argument("--t_feat_dim", type=int, default=512, help="text/query feature dim")
         parser.add_argument("--ctx_mode", type=str, default="video_tef")
 
         # Model config

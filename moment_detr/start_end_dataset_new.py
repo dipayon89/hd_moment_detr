@@ -56,6 +56,7 @@ TVSUM_SPLITS = {
     }
 }
 
+
 class StartEndDatasetNew(Dataset):
     Q_FEAT_TYPES = ["pooler_output", "last_hidden_state"]
     """One line in data loaded from data_path."
@@ -101,13 +102,12 @@ class StartEndDatasetNew(Dataset):
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
 
-
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
 
         # data
         self.data = self.load_data()
-        
+
         # load specific domain data for tvsum dataset
         if self.dset_name in ['tvsum', 'tvsum_sfc']:
             target_domain = dset_domain
@@ -118,18 +118,18 @@ class StartEndDatasetNew(Dataset):
                 if target_domain == d['domain']:
                     new_data.append(d)
             self.data = new_data
-            
+
         # load specific domain data for youtube-hl dataset
         if self.dset_name == 'youtube_uni':
             target_domain = dset_domain
             assert target_domain in ["dog", "gymnastics", "parkour", "skating", "skiing", "surfing"]
-            
+
             new_data = []
             for d in self.data:
                 if target_domain == d['domain']:
                     new_data.append(d)
-            self.data = new_data    
-        
+            self.data = new_data
+
         self.use_glove = False
         self.use_glove = 'vgg' in self.v_feat_dirs[0]
 
@@ -140,7 +140,6 @@ class StartEndDatasetNew(Dataset):
             self.vocab.vectors = torch.cat(
                 (self.vocab.vectors, torch.zeros(1, self.vocab.dim)), dim=0)
             self.embedding = nn.Embedding.from_pretrained(self.vocab.vectors)
-        
 
     def load_data(self):
         datalist = load_jsonl(self.data_path)
@@ -163,13 +162,12 @@ class StartEndDatasetNew(Dataset):
             model_inputs["query_feat"] = self.get_query(meta["query"])
         else:
             model_inputs["query_feat"] = self._get_query_feat_by_qid(meta["qid"])  # (Dq, ) or (Lq, Dq)
-            
+
         if self.use_video:
             model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
         else:
             ctx_l = self.max_v_l
-
 
         if self.use_tef:
             tef_st = torch.arange(0, ctx_l, 1.0) / ctx_l
@@ -181,41 +179,48 @@ class StartEndDatasetNew(Dataset):
             else:
                 model_inputs["video_feat"] = tef
 
-
         if self.dset_name in ['tvsum']:
             model_inputs["span_labels"] = torch.tensor([[0., 0.]])
             meta_label = meta['label']
-            model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
+            model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                "saliency_all_labels"] = \
+                self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
             if len(model_inputs["saliency_all_labels"]) != len(model_inputs["video_feat"]):
                 model_inputs["video_feat"] = model_inputs["video_feat"][:len(model_inputs["saliency_all_labels"])]
 
         elif self.dset_name == 'youtube_uni':
             model_inputs["span_labels"] = torch.tensor([[0., 0.]])
             meta_label = meta['label']
-            model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_all_youtube(meta_label, ctx_l)
+            model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                "saliency_all_labels"] = \
+                self.get_saliency_labels_all_youtube(meta_label, ctx_l)
         else:
-            if "relevant_windows" in meta: ## For Qvhighlights test set
+            if "relevant_windows" in meta:  ## For Qvhighlights test set
                 model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
-                if self.dset_name in ['charadesSTA', 'tacos', 'activitynet']: ## charades, tacos, nlq
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l)  # only one gt
+                if self.dset_name in ['charadesSTA', 'tacos', 'activitynet']:  ## charades, tacos, nlq
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"],
+                                                              ctx_l)  # only one gt
                 elif self.dset_name in ['nlq']:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l, 2)  # only one gt
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l,
+                                                              2)  # only one gt
                 elif "subs_train" not in self.data_path:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
                         self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
                 else:
                     model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
                         "saliency_all_labels"] = \
-                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l)  # only one gt
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"],
+                                                              ctx_l)  # only one gt
 
         if 'qvhighlight' in self.data_path:
             model_inputs["relevant_clip_ids"] = meta["relevant_clip_ids"]
-        model_inputs["vid"] = meta["vid"]
-        model_inputs["qid"] = meta["qid"]
+        # model_inputs["vid"] = meta["vid"]
+        # model_inputs["qid"] = meta["qid"]
         return dict(meta=meta, model_inputs=model_inputs)
 
     def get_query(self, query):
@@ -238,7 +243,7 @@ class StartEndDatasetNew(Dataset):
             else:
                 pos_clip_indices = [gt_st, gt_st]
 
-        neg_pool = list(range(0, gt_st)) + list(range(gt_ed+1, ctx_l))
+        neg_pool = list(range(0, gt_st)) + list(range(gt_ed + 1, ctx_l))
         try:
             neg_clip_indices = random.sample(neg_pool, k=max_n)
         except:
@@ -249,7 +254,6 @@ class StartEndDatasetNew(Dataset):
         score_array[gt_st:gt_ed + 1] = 1
 
         return pos_clip_indices, neg_clip_indices, score_array
-        
 
     def get_saliency_labels(self, rel_clip_ids, scores, ctx_l, max_n=1, add_easy_negative=True):
         """Sum the scores from the three annotations, then take the two clips with the
@@ -269,8 +273,8 @@ class StartEndDatasetNew(Dataset):
         # indices in the whole video
         # the min(_, ctx_l-1) here is incorrect, but should not cause
         # much troubles since this should be rarely used.
-        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -313,8 +317,8 @@ class StartEndDatasetNew(Dataset):
         # indices in the whole video
         # the min(_, ctx_l-1) here is incorrect, but should not cause
         # much troubles since this should be rarely used.
-        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -331,13 +335,13 @@ class StartEndDatasetNew(Dataset):
         return pos_clip_indices, neg_clip_indices, score_array
 
     def get_saliency_labels_all_tvsum(self, labels, ctx_l, max_n=1, add_easy_negative=False):
-        
-        agg_scores = np.sum(labels - np.ones_like(labels), axis=-1)[:ctx_l] # start from 1, so minus 1
+
+        agg_scores = np.sum(labels - np.ones_like(labels), axis=-1)[:ctx_l]  # start from 1, so minus 1
         score_array = agg_scores / 80 * 12
         sort_indices = np.argsort(agg_scores)  # increasing
 
-        hard_pos_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -355,15 +359,15 @@ class StartEndDatasetNew(Dataset):
         return pos_clip_indices, neg_clip_indices, score_array
 
     def get_saliency_labels_all_youtube(self, labels, ctx_l, max_n=1, add_easy_negative=False):
-        
+
         # Youtube-hl only have binary score
-        agg_scores = np.array(labels)[:, 0] # (L, 1) --> (L, )
+        agg_scores = np.array(labels)[:, 0]  # (L, 1) --> (L, )
         score_array = agg_scores * 1
-        
+
         sort_indices = np.argsort(agg_scores)  # increasing
 
-        hard_pos_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(idx, ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -379,8 +383,7 @@ class StartEndDatasetNew(Dataset):
         neg_clip_indices = hard_neg_clip_indices + easy_neg_clip_indices
 
         return pos_clip_indices, neg_clip_indices, score_array
-    
-    
+
     def get_span_labels(self, windows, ctx_l):
         """
         windows: list([st, ed]) in seconds. E.g. [[26, 36]], corresponding st_ed clip_indices [[13, 17]] (inclusive)
@@ -403,13 +406,13 @@ class StartEndDatasetNew(Dataset):
 
     def _get_query_feat_by_qid(self, qid):
         if self.dset_name == 'tvsum':
-            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid))) # 'token', 'text'
+            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid)))  # 'token', 'text'
             return torch.from_numpy(q_feat['token'])
         # youtube-hl
         elif self.dset_name == 'youtube_uni':
             q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid)))
             return torch.from_numpy(q_feat['last_hidden_state'])
-        
+
         elif self.dset_name in ['tacos', 'nlq']:
             q_feat_path = join(self.q_feat_dir, f"{qid}.npz")
             q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
@@ -452,7 +455,7 @@ class StartEndDatasetNew(Dataset):
 
                 _feat_path = join(_feat_dir, f"{vid}_opt.npy")
                 _feat_opt = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
-                
+
                 _feat = np.concatenate([_feat_rgb, _feat_opt], axis=-1)
                 # _feat = _feat_rgb
                 if self.normalize_v:
@@ -473,14 +476,14 @@ class StartEndDatasetNew(Dataset):
                 except:
                     _feat_path = join(_feat_dir, f"{vid}.npy")
                     _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
-                
+
                 # _feat = _feat_rgb
                 if self.normalize_v:
                     _feat = l2_normalize_np_array(_feat)
                 v_feat_list.append(_feat)
             # some features are slightly longer than the others
             min_len = min([len(e) for e in v_feat_list])
-            v_feat_list = [e[:min_len] for e in v_feat_list] # TODO do we need to cut the length over the min_len?
+            v_feat_list = [e[:min_len] for e in v_feat_list]  # TODO do we need to cut the length over the min_len?
             v_feat = np.concatenate(v_feat_list, axis=1)
 
         else:
@@ -502,8 +505,7 @@ class StartEndDatasetNew(Dataset):
         return torch.from_numpy(v_feat)  # (Lv, D)
 
 
-
-def start_end_collate(batch):
+def start_end_collate_new(batch):
     batch_meta = [e["meta"] for e in batch]  # seems no need to collate ?
 
     model_inputs_keys = batch[0]["model_inputs"].keys()
@@ -516,28 +518,29 @@ def start_end_collate(batch):
             batched_data[k] = torch.LongTensor([e["model_inputs"][k] for e in batch])
             continue
         if k == "saliency_all_labels":
-            pad_data, mask_data = pad_sequences_1d([e["model_inputs"][k] for e in batch], dtype=np.float32, fixed_length=None)
+            pad_data, mask_data = pad_sequences_1d([e["model_inputs"][k] for e in batch], dtype=np.float32,
+                                                   fixed_length=None)
             batched_data[k] = torch.tensor(pad_data, dtype=torch.float32)
             continue
-        if k == 'qid':
-            batched_data[k] = [e["model_inputs"][k] for e in batch]
-            continue
-        if k == 'vid':
-            batched_data[k] = [e["model_inputs"][k] for e in batch]
-            continue
+        # if k == 'qid':
+        #     batched_data[k] = [e["model_inputs"][k] for e in batch]
+        #     continue
+        # if k == 'vid':
+        #     batched_data[k] = [e["model_inputs"][k] for e in batch]
+        #     continue
         batched_data[k] = pad_sequences_1d(
             [e["model_inputs"][k] for e in batch], dtype=torch.float32, fixed_length=None)
     return batch_meta, batched_data
 
 
-def prepare_batch_inputs(batched_model_inputs, device, non_blocking=False):
+def prepare_batch_inputs_new(batched_model_inputs, device, non_blocking=False):
     model_inputs = dict(
         src_txt=batched_model_inputs["query_feat"][0].to(device, non_blocking=non_blocking),
         src_txt_mask=batched_model_inputs["query_feat"][1].to(device, non_blocking=non_blocking),
         src_vid=batched_model_inputs["video_feat"][0].to(device, non_blocking=non_blocking),
         src_vid_mask=batched_model_inputs["video_feat"][1].to(device, non_blocking=non_blocking),
-        vid=batched_model_inputs["vid"],
-        qid=batched_model_inputs["qid"],
+        # vid=batched_model_inputs["vid"],
+        # qid=batched_model_inputs["qid"],
     )
     targets = {}
 
@@ -551,7 +554,8 @@ def prepare_batch_inputs(batched_model_inputs, device, non_blocking=False):
             targets[name] = batched_model_inputs[name].to(device, non_blocking=non_blocking)
 
     if "saliency_all_labels" in batched_model_inputs:
-        targets["saliency_all_labels"] = batched_model_inputs["saliency_all_labels"].to(device, non_blocking=non_blocking)
+        targets["saliency_all_labels"] = batched_model_inputs["saliency_all_labels"].to(device,
+                                                                                        non_blocking=non_blocking)
         targets["relevant_clips"] = batched_model_inputs["saliency_all_labels"].to(device, non_blocking=non_blocking)
     targets = None if len(targets) == 0 else targets
     return model_inputs, targets

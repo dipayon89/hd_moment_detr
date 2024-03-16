@@ -70,6 +70,7 @@ tensorboardX
 threadpoolctl
 torch
 torchvision
+torchtext
 tqdm
 traitlets
 typing-extensions

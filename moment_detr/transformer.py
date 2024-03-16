@@ -595,7 +595,7 @@ class VTCrossTransformer(nn.Module):
                  keep_query_pos=False, query_scale_type='cond_elewise',
                  num_patterns=0,
                  modulate_t_attn=True,
-                 bbox_embed_diff_each_layer=False, ):
+                 bbox_embed_diff_each_layer=False, video_len=75):
         super().__init__()
 
         # TransformerEncoderLayerThin
@@ -610,22 +610,23 @@ class VTCrossTransformer(nn.Module):
                                                  hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
-        # decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
-        #                                           dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
-        # decoder_norm = nn.LayerNorm(d_model)
-        # self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
-        #                                     return_intermediate=return_intermediate_dec,
-        #                                     d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
-        #                                     query_scale_type=query_scale_type,
-        #                                     modulate_t_attn=modulate_t_attn,
-        #                                     bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
+        decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
+                                                  dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
+        decoder_norm = nn.LayerNorm(d_model)
+        self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
+                                            return_intermediate=return_intermediate_dec,
+                                            d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
+                                            query_scale_type=query_scale_type,
+                                            modulate_t_attn=modulate_t_attn,
+                                            bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
 
         
         # self.saliency_proj1 = nn.Linear(d_model, d_model)
         # self.saliency_proj2 = nn.Linear(d_model, d_model)
 
-        self.class_estimator = ClassPredictionHead(d_model, num_queries)
-        self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation)
+        # self.class_estimator = ClassPredictionHead(d_model, num_queries, video_len=video_len)
+        # self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation,
+        #                                                          video_len=video_len)
 
         self._reset_parameters()
 
@@ -667,21 +668,21 @@ class VTCrossTransformer(nn.Module):
                                                pos_txt=pos_embed_txt)  # (L, batch_size, d)
 
         memory_global, memory_local = memory[0], memory[1:]
-        # mask_local = mask[:, 1:]
-        # pos_embed_local = pos_embed[1:]
+        mask_local = mask[:, 1:]
+        pos_embed_local = pos_embed[1:]
 
-        # tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
-        # hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
-        #                               pos=pos_embed_local,
-        #                               refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
+        tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
+        hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
+                                      pos=pos_embed_local,
+                                      refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
 
 
 
         # hs = self.class_estimator(memory_global)
         # references = self.localization_estimator(memory_global)
 
-        hs = self.class_estimator(memory)
-        references = self.localization_estimator(memory)
+        # hs = self.class_estimator(memory)
+        # references = self.localization_estimator(memory,)
 
         memory_local = memory_local.transpose(0, 1)  # (batch_size, L, d)
         return hs, references, memory_local, self.global_threshold(memory_global)
@@ -1210,68 +1211,127 @@ class VTTransformerDecoderLayer(nn.Module):
         return tgt
 
 
+# class ClassPredictionHead(nn.Module):
+#     """ Simple Prediction Head consisting of a conv layer and a linear layer """
+#
+#     def __init__(self, d_model, out_dim, dropout=0.1, video_len=75):
+#         super().__init__()
+#         self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
+#         self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
+#         # self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
+#         self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
+#         self.linear = nn.Linear(video_len + 1, out_dim)
+#         self.norm = nn.LayerNorm(video_len + 1)
+#         self.activation = LearnableThreshold(0.1)
+#         self.dropout1 = nn.Dropout(dropout)
+#         self.dropout2 = nn.Dropout(dropout)
+#
+#     def forward(self, mixed_data):
+#         x = mixed_data #.unsqueeze(dim=0)
+#         x = x.permute(0, 2, 1)
+#         x = self.conv1_1(x)
+#         x = self.conv1_2(x)# + self.conv1_3(x))
+#         x = self.dropout1(x)
+#         x = self.conv2(x)
+#         # x = x.squeeze(dim=1)
+#         x = self.dropout2(x)
+#         x = x.permute(2, 1, 0)
+#         x = self.norm(x)
+#         x = self.linear(self.activation(x))
+#         x = x.permute(0, 2, 1)
+#         return x.unsqueeze(0)
+#
+#
+# class LocalizationPredictionHead(nn.Module):
+#     """ Simple Prediction Head consisting of a conv layer and a linear layer """
+#
+#     def __init__(self, d_model, out_dim, dropout=0.1, activation="relu", video_len=75):
+#         super().__init__()
+#         self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
+#         self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
+#         # self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
+#         self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
+#         self.norm = nn.LayerNorm(video_len + 1)
+#         self.mlp = MLP(video_len + 1, d_model, out_dim, 3)
+#         # self.linear2 = nn.Linear(out_dim, out_dim)
+#         self.activation = _get_activation_fn(activation)
+#         self.dropout1 = nn.Dropout(dropout)
+#         self.dropout2 = nn.Dropout(dropout)
+#
+#     def forward(self, mixed_data):
+#         x = mixed_data #.unsqueeze(dim=0)
+#         x = x.permute(0, 2, 1)
+#         x = self.conv1_1(x)# + self.conv1_2(x) + self.conv1_3(x)
+#         x = self.conv1_2(x)
+#         x = self.dropout1(x)
+#         x = self.conv2(x)
+#         # x = x.squeeze(dim=1)
+#         x = self.dropout2(x)
+#         x = x.permute(2, 1, 0)
+#         x = self.norm(x)
+#         x = self.mlp(x)
+#         x = x.permute(0, 2, 1)
+#         x = self.activation(x)
+#         # x = self.linear2(x)
+#         return x.unsqueeze(0)
+
+
 class ClassPredictionHead(nn.Module):
     """ Simple Prediction Head consisting of a conv layer and a linear layer """
 
-    def __init__(self, d_model, out_dim, dropout=0.1):
+    def __init__(self, d_model, num_class=2,
+                 in_channel=10, out_channel=10,
+                 num_forward_conv_layer=3, dropout=0.1):
         super().__init__()
-        self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
-        self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
-        # self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
-        self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
-        self.linear = nn.Linear(76, out_dim)
-        self.norm = nn.LayerNorm(76)
+        self.d_model = d_model
+        self.norm = nn.LayerNorm(d_model)
+        self.conv_forward = nn.ModuleList(
+            [nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1) for i in
+             range(num_forward_conv_layer)])
+        self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
+        self.linear = nn.Linear(d_model, num_class)
         self.activation = LearnableThreshold(0.1)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
+        self.dropout = dropout
 
-    def forward(self, mixed_data):
-        x = mixed_data #.unsqueeze(dim=0)
-        x = x.permute(0, 2, 1)
-        x = self.conv1_1(x)
-        x = self.conv1_2(x)# + self.conv1_3(x))
-        x = self.dropout1(x)
-        x = self.conv2(x)
-        # x = x.squeeze(dim=1)
-        x = self.dropout2(x)
-        x = x.permute(2, 1, 0)
-        x = self.norm(x)
+    def forward(self, mixed_data, ):
+        x = self.norm(mixed_data)
+        x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
+        for conv_id, conv in enumerate(self.conv_forward):
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=self.dropout)
         x = self.linear(self.activation(x))
-        x = x.permute(0, 2, 1)
         return x.unsqueeze(0)
 
 
-class LocalizationPredictionHead(nn.Module):
+class SpanPredictionHead(nn.Module):
     """ Simple Prediction Head consisting of a conv layer and a linear layer """
 
-    def __init__(self, d_model, out_dim, dropout=0.1, activation="relu"):
+    def __init__(self, d_model, span_pred_dim=2,
+                 in_channel=10, out_channel=10,
+                 num_forward_conv_layer=3,
+                 dropout=0.1):
         super().__init__()
-        self.conv1_1 = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
-        self.conv1_2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2)
-        # self.conv1_3 = nn.Conv1d(d_model, d_model, kernel_size=7, padding=3)
-        self.conv2 = nn.Conv1d(d_model, 2, kernel_size=5, padding=2)
-        self.norm = nn.LayerNorm(76)
-        self.mlp = MLP(76, d_model, out_dim, 3)
-        # self.linear2 = nn.Linear(out_dim, out_dim)
-        self.activation = _get_activation_fn(activation)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
+        self.d_model = d_model
+        self.norm = nn.LayerNorm(d_model)
+        self.conv_forward = nn.ModuleList(
+            [nn.Conv1d(in_channel, d_model, kernel_size=2 * (i + 1) + 1, padding=i + 1) for i in
+             range(num_forward_conv_layer)])
+        self.conv_backward = nn.Conv1d(d_model, out_channel, kernel_size=5, padding=2)
+        # self.linear = nn.Linear(d_model, span_pred_dim)
+        self.mlp = MLP(d_model, d_model, span_pred_dim, 3)
+        self.dropout = dropout
 
     def forward(self, mixed_data):
-        x = mixed_data #.unsqueeze(dim=0)
-        x = x.permute(0, 2, 1)
-        x = self.conv1_1(x)# + self.conv1_2(x) + self.conv1_3(x)
-        x = self.conv1_2(x)
-        x = self.dropout1(x)
-        x = self.conv2(x)
-        # x = x.squeeze(dim=1)
-        x = self.dropout2(x)
-        x = x.permute(2, 1, 0)
-        x = self.norm(x)
+        x = self.norm(mixed_data)
+        x1 = torch.zeros((x.shape[0], self.d_model, x.shape[2]), device=x.device, dtype=x.dtype)
+        for conv_id, conv in enumerate(self.conv_forward):
+            x1 += conv(F.dropout(x, p=self.dropout))
+        x = self.conv_backward(x1)
+        x = x.squeeze(dim=1)
+        x = F.dropout(x, p=self.dropout)
         x = self.mlp(x)
-        x = x.permute(0, 2, 1)
-        x = self.activation(x)
-        # x = self.linear2(x)
         return x.unsqueeze(0)
 
 
@@ -1346,6 +1406,7 @@ def build_transformer(args):
         num_encoder_layers=args.enc_layers,
         num_decoder_layers=args.dec_layers,
         normalize_before=args.pre_norm,
+        video_len=args.max_v_l,
         return_intermediate_dec=True,
         activation='prelu',
     )

@@ -12,7 +12,7 @@ eval_path=data/tvsum/tvsum_val.jsonl
 eval_split_name=val
 
 ######## setup video+text features
-feat_root=../features/tvsum
+feat_root=../Datasets/tvsum
 
 # # video features
 v_feat_dim=2048
@@ -42,7 +42,7 @@ do
         do
             for num_prompts in 1 2
             do
-                PYTHONPATH=$PYTHONPATH:. python cg_detr/train.py \
+                PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
                 --dset_name ${dset_name} \
                 --ctx_mode ${ctx_mode} \
                 --train_path ${train_path} \
@@ -56,7 +56,7 @@ do
                 --results_root ${results_root}/${dset_domain} \
                 --exp_id ${exp_id} \
                 --max_v_l 1000 \
-                --n_epoch 1000 \
+                --n_epoch 10 \
                 --lr_drop 2000 \
                 --max_es_cnt -1 \
                 --seed $seed \

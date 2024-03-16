@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader
 from moment_detr.config import TestOptions
 from moment_detr.model import build_model
 from moment_detr.span_utils import span_cxw_to_xx
-from moment_detr.start_end_dataset_new import StartEndDatasetNew, start_end_collate, prepare_batch_inputs
-from moment_detr.start_end_dataset import StartEndDataset
+from moment_detr.start_end_dataset_new import StartEndDatasetNew, start_end_collate_new, prepare_batch_inputs_new
+from moment_detr.start_end_dataset import StartEndDataset, start_end_collate, prepare_batch_inputs
 from moment_detr.postprocessing_moment_detr import PostProcessorDETR
 from standalone_eval.eval import eval_submission
 from utils.basic_utils import save_jsonl, save_json
@@ -103,7 +103,10 @@ def compute_hl_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
     for batch in tqdm(eval_loader, desc="compute st ed scores"):
         query_meta = batch[0]
 
-        model_inputs, targets = prepare_batch_inputs(batch[1], opt.device, non_blocking=opt.pin_memory)
+        if opt.dset_name in ["hl"]:
+            model_inputs, targets = prepare_batch_inputs(batch[1], opt.device, non_blocking=opt.pin_memory)
+        else:
+            model_inputs, targets = prepare_batch_inputs_new(batch[1], opt.device, non_blocking=opt.pin_memory)
 
         outputs = model(**model_inputs)
 
@@ -330,14 +333,24 @@ def eval_epoch(model, eval_dataset, opt, save_submission_filename, epoch_i=None,
     else:
         shuffle = False
 
-    eval_loader = DataLoader(
-        eval_dataset,
-        collate_fn=start_end_collate,
-        batch_size=opt.eval_bsz,
-        num_workers=opt.num_workers,
-        shuffle=shuffle,
-        pin_memory=opt.pin_memory
-    )
+    if opt.dset_name in ['hl']:
+        eval_loader = DataLoader(
+            eval_dataset,
+            collate_fn=start_end_collate,
+            batch_size=opt.eval_bsz,
+            num_workers=opt.num_workers,
+            shuffle=shuffle,
+            pin_memory=opt.pin_memory
+        )
+    else:
+        eval_loader = DataLoader(
+            eval_dataset,
+            collate_fn=start_end_collate_new,
+            batch_size=opt.eval_bsz,
+            num_workers=opt.num_workers,
+            shuffle=shuffle,
+            pin_memory=opt.pin_memory
+        )
 
     # tvsum
     if opt.dset_name in ['tvsum', 'youtube_uni']:
