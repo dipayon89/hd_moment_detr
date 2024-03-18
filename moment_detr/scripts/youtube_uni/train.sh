@@ -15,7 +15,7 @@ eval_split_name=val
 
 ######## setup video+text features
 # feat_root=../features/tvsum
-feat_root=../features/youtube_uni
+feat_root=../Datasets/youtube_uni
 
 # # video features
 v_feat_dim=2816
@@ -46,7 +46,7 @@ do
         do
             for num_prompts in 1 2
             do
-                PYTHONPATH=$PYTHONPATH:. python cg_detr/train.py \
+                PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
                 --dset_name ${dset_name} \
                 --ctx_mode ${ctx_mode} \
                 --train_path ${train_path} \

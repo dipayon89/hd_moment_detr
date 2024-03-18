@@ -56,7 +56,7 @@ do
                 --results_root ${results_root}/${dset_domain} \
                 --exp_id ${exp_id} \
                 --max_v_l 1000 \
-                --n_epoch 10 \
+                --n_epoch 1000 \
                 --lr_drop 2000 \
                 --max_es_cnt -1 \
                 --seed $seed \
