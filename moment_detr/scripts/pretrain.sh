@@ -33,7 +33,7 @@ if [[ ${t_feat_types} == *"clip"* ]]; then
   (( t_feat_dim += 512 ))  # double brackets for arithmetic op, no need to use ${v_feat_dim}
 fi
 
-echo "t_feat_dirs: "$t_feat_dirs
+#echo "t_feat_dirs: "$t_feat_dirs
 #### training
 bsz=256
 num_workers=8
