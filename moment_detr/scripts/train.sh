@@ -1,6 +1,6 @@
 dset_name=hl
 ctx_mode=video_tef
-v_feat_types=slowfast_clip_blip
+v_feat_types=slowfast_clip
 #v_feat_types=clip
 t_feat_types=clip
 results_root=results
