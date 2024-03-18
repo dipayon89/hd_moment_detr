@@ -1,7 +1,7 @@
 dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
-t_feat_type=clip 
+t_feat_types=clip
 results_root=results
 exp_id=pt
 
@@ -26,14 +26,14 @@ if [[ ${v_feat_types} == *"clip"* ]]; then
 fi
 
 # text features
-if [[ ${t_feat_type} == "clip" ]]; then
-  t_feat_dir=${feat_root}/clip_sub_features/
-  t_feat_dim=512
-else
-  echo "Wrong arg for t_feat_type."
-  exit 1
+t_feat_dim=0
+t_feat_dirs=()
+if [[ ${t_feat_types} == *"clip"* ]]; then
+  t_feat_dirs+=(${feat_root}/clip_sub_features)
+  (( t_feat_dim += 512 ))  # double brackets for arithmetic op, no need to use ${v_feat_dim}
 fi
 
+echo "t_feat_dirs: "$t_feat_dirs
 #### training
 bsz=256
 num_workers=8
@@ -50,7 +50,7 @@ PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
 --v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
+--t_feat_dirs ${t_feat_dirs[@]} \
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
