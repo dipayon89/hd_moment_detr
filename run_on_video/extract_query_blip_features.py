@@ -17,8 +17,14 @@ from run_on_video.data_utils import VideoLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor", model_type="base",
-                                                                  is_eval=True, device=device)
+model, vis_processors, txt_processors = load_model_and_preprocess(name="blip2_feature_extractor",
+                                                                  model_type="pretrain", is_eval=True,
+                                                                  device=device)  # Blip2 featrures
+
+
+# model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor",
+#                                                                   model_type="base", is_eval=True,
+#                                                                   device=device) # Blip featrures
 # text_input = txt_processors["eval"](caption)
 # sample = {"image": image, "text_input": [text_input]}
 video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True)
