@@ -200,9 +200,9 @@ def extract_test_query_features():
 
 
 def extract_all_query_features():
-    # extract_train_query_features()
-    # extract_val_query_features()
-    # extract_test_query_features()
+    extract_train_query_features()
+    extract_val_query_features()
+    extract_test_query_features()
     extract_train_video_features()
     extract_val_video_features()
     extract_test_video_features()
