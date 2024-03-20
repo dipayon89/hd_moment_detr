@@ -764,9 +764,9 @@ class VTCrossTransformerEncoder(nn.Module):
 
         # mixing avToken before self attention
         output = self.layers_cross(output_vid, output_txt,
-                                   src1_key_padding_mask=src_vid_key_padding_mask,
-                                   src2_key_padding_mask=src_txt_key_padding_mask,
-                                   pos1=pos_vid, pos2=pos_txt)
+                                   video_key_padding_mask=src_vid_key_padding_mask,
+                                   text_key_padding_mask=src_txt_key_padding_mask,
+                                   pos_video=pos_vid, pos_text=pos_txt)
         if self.return_intermediate:
             intermediate.append(output)
 
@@ -826,57 +826,62 @@ class CrossAttentionLayer(nn.Module):
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
         self.cross_attn_1 = MultiheadAttention(d_model, nhead, dropout=dropout)
         self.cross_attn_2 = MultiheadAttention(d_model, nhead, dropout=dropout)
-        # self.pooling = nn.AvgPool1d(3, stride=2, padding=1)
-        # self.pooling = nn.MaxPool1d(3, stride=2, padding=1)
-        self.conv = nn.Conv1d(d_model*2, d_model, kernel_size=3, padding=1)
+        self.cross_attn_3 = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn_4 = MultiheadAttention(d_model, nhead, dropout=dropout)
         self.linear1 = nn.Linear(d_model, d_model)
-        self.linear2 = nn.Linear(d_model, dim_feedforward)
-        self.linear3 = nn.Linear(dim_feedforward, d_model)
+        self.linear2 = nn.Linear(d_model, d_model)
+        self.linear3 = nn.Linear(d_model, d_model)
+        self.linear4 = nn.Linear(d_model, dim_feedforward)
+        self.linear5 = nn.Linear(dim_feedforward, d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
         self.dropout4 = nn.Dropout(dropout)
+        self.dropout5 = nn.Dropout(dropout)
+        self.dropout6 = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
+        self.norm4 = nn.LayerNorm(d_model)
 
         self.activation = _get_activation_fn(activation)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
 
-    def forward(self, src1, src2,
-                src1_mask: Optional[Tensor] = None,
-                src2_mask: Optional[Tensor] = None,
-                src1_key_padding_mask: Optional[Tensor] = None,
-                src2_key_padding_mask: Optional[Tensor] = None,
-                pos1: Optional[Tensor] = None,
-                pos2: Optional[Tensor] = None):
-        k = v = self.with_pos_embed(src2, pos2)
-        out1 = self.cross_attn_1(query=src1, key=k, value=v, attn_mask=src2_mask,
-                                 key_padding_mask=src2_key_padding_mask)[0]
-        out1 = self.norm1(self.linear1(self.dropout1(out1)))
-        # print("out1.shape", out1.shape)
-        out2 = self.self_attn(query=out1, key=out1, value=out1, attn_mask=src2_mask,
-                              key_padding_mask=src1_key_padding_mask)[0]
-        out2 = self.dropout2(out2)
+    def forward(self, video, text,
+                video_mask: Optional[Tensor] = None,
+                text_mask: Optional[Tensor] = None,
+                video_key_padding_mask: Optional[Tensor] = None,
+                text_key_padding_mask: Optional[Tensor] = None,
+                pos_video: Optional[Tensor] = None,
+                pos_text: Optional[Tensor] = None):
 
-        # print("out2.shape", out2.shape)
-        x = torch.cat([out1, out2], dim=2)
-        x = x.permute(0, 2, 1)
-        x = self.conv(x)
-        x = x.permute(0, 2, 1)
-        out3 = self.norm2(x)
+        k = v = self.with_pos_embed(text, pos_text)
+        out1 = self.cross_attn_1(query=video, key=k, value=v, attn_mask=text_mask,
+                                 key_padding_mask=text_key_padding_mask)[0]
+        out1 = video + self.norm1(self.linear1(self.dropout1(out1)))
 
-        # print("out3.shape", out3.shape)
-        k = v = self.with_pos_embed(src1, pos1)
 
-        out = self.cross_attn_2(query=out3, key=k, value=v, attn_mask=src1_mask,
-                                key_padding_mask=src1_key_padding_mask)[0]
+        k = v = self.with_pos_embed(video, pos_video)
+        out2 = self.cross_attn_2(query=text, key=k, value=v, attn_mask=video_mask,
+                                 key_padding_mask=video_key_padding_mask)[0]
+        out2 = text + self.norm2(self.linear2(self.dropout2(out2)))
+
+
+        out3 = self.cross_attn_3(query=out1, key=out2, value=out2, attn_mask=text_mask,
+                                 key_padding_mask=text_key_padding_mask)[0]
+        out3 = self.norm3(self.linear3(self.dropout3(out3)))
+
+
+        out2 = self.self_attn(query=out3, key=out3, value=out3, attn_mask=video_mask,
+                              key_padding_mask=video_key_padding_mask)[0]
+        out = out3 + self.dropout4(out2)
+
         # print("out.shape", out.shape)
-        out1 = self.linear3(self.dropout3(self.activation(self.linear2(out))))
-        out = out + self.dropout4(out1)
-        out = self.norm3(out)
+        out1 = self.linear5(self.dropout5(self.activation(self.linear4(out))))
+        out = out + self.dropout6(out1)
+        out = self.norm4(out)
         # print("out.shape", out.shape)
         return out
 
