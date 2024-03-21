@@ -63,7 +63,7 @@ vis_processors.keys()
 video_loader = VideoLoader(framerate=0.1, size=224, centercrop=True)
 
 v_input_dir = "../QVHighlights/processed_videos/"
-pretrain_jsonl_path = "data/highlight_train_release.jsonl"
+pretrain_jsonl_path = "data/pre_train_blip.jsonl"
 
 
 @torch.no_grad()
@@ -105,14 +105,18 @@ def generate_pretrain_data(input_dir):
         for video in tqdm(video_files):
             train_data.extend(encode_video(input_dir,
                                            os.path.splitext(video)[0]))
+            save_jsonl_file(train_data, pretrain_jsonl_path)
     return train_data
 
 
+def save_jsonl_file(data, file_path):
+    with open(file_path, "w") as f:
+        for d in data:
+            f.write(json.dumps(d) + "\n")
+
 def extract_and_load_pretrain_data():
     train_data = generate_pretrain_data(v_input_dir)
-    with open(pretrain_jsonl_path, "w") as f:
-        for data in train_data:
-            f.write(json.dumps(data) + "\n")
+    save_jsonl_file(train_data, pretrain_jsonl_path)
 
 
 if __name__ == "__main__":
