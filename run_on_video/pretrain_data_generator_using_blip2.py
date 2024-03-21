@@ -96,12 +96,14 @@ def encode_video(input_dir: str, vid: str):
 def read_all_files_from_directory(directory_path):
     return [f for f in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, f))]
 
+
 def generate_pretrain_data(input_dir):
     train_data = []
     video_files = read_all_files_from_directory(input_dir)
     with torch.no_grad():
-        for vid in video_files:
-            train_data.extend(encode_video(input_dir, vid))
+        for video in video_files:
+            train_data.extend(encode_video(input_dir,
+                                           os.path.splitext(video)[0]))
     return train_data
 
 
