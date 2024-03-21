@@ -4,6 +4,7 @@ from os.path import join
 
 import torch
 from lavis.models import load_model_and_preprocess
+from tqdm import tqdm
 
 from run_on_video.data_utils import VideoLoader
 
@@ -101,7 +102,7 @@ def generate_pretrain_data(input_dir):
     train_data = []
     video_files = read_all_files_from_directory(input_dir)
     with torch.no_grad():
-        for video in video_files:
+        for video in tqdm(video_files):
             train_data.extend(encode_video(input_dir,
                                            os.path.splitext(video)[0]))
     return train_data
