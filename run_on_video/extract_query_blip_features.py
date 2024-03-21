@@ -57,7 +57,7 @@ def encode_video_query(input_dir, batch):
 
 @torch.no_grad()
 def encode_video(video_path: str):
-    video_frames = video_loader.read_raw_image_from_video_file(video_path)  # (T, H, W, 3)
+    video_frames, _ = video_loader.read_raw_image_from_video_file(video_path)  # (T, H, W, 3)
     n_frames = len(video_frames)
     video_features = []
     for i in range(n_frames):

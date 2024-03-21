@@ -274,4 +274,4 @@ class VideoLoader:
         video = np.frombuffer(out, np.uint8).reshape(
             [-1, height, width, 3])
         video = [generate_image_from_raw_data(frame, width, height) for frame in video]
-        return video
+        return video, info
