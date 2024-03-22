@@ -47,7 +47,7 @@ def encode_text_query(batch):
 def encode_video_query(input_dir, batch):
     batch_output = []
     with torch.no_grad():
-        for vid in batch:
+        for vid in tqdm(batch):
             video_path = join(input_dir, f"{vid}.mp4")
             # print("video_path", video_path)
             video_feature = encode_video(video_path)
