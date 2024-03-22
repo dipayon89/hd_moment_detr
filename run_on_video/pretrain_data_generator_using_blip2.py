@@ -28,15 +28,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     name="blip_caption", model_type="large_coco", is_eval=True, device=device
 # )
 # uncomment to use base model
-model, vis_processors, _ = load_model_and_preprocess(
-    name="blip_caption", model_type="base_coco", is_eval=True, device=device
-)
-vis_processors.keys()
+# model, vis_processors, _ = load_model_and_preprocess(
+#     name="blip_caption", model_type="base_coco", is_eval=True, device=device
+# )
+# vis_processors.keys()
 
 # we associate a model with its preprocessors to make it easier for inference.
-# model, vis_processors, _ = load_model_and_preprocess(
-#     name="blip2_t5", model_type="pretrain_flant5xxl", is_eval=True, device=device
-# )
+model, vis_processors, _ = load_model_and_preprocess(
+    name="blip2_t5", model_type="pretrain_flant5xxl", is_eval=True, device=device
+)
 
 # Other available models:
 #
