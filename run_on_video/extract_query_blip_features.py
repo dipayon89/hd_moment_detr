@@ -21,7 +21,6 @@ model, vis_processors, txt_processors = load_model_and_preprocess(name="blip2_fe
                                                                   model_type="pretrain", is_eval=True,
                                                                   device=device)  # Blip2 featrures
 
-
 # model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor",
 #                                                                   model_type="base", is_eval=True,
 #                                                                   device=device) # Blip featrures
@@ -32,6 +31,7 @@ video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True)
 v_input_dir = "../QVHighlights/processed_videos/"
 v_feat_dir = "../QVHighlights/features/blip_video_features/"
 q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
+
 
 def encode_text_query(batch):
     batch_output = []
@@ -100,6 +100,12 @@ def generate_batched_vid(v_feat_dir, batch):
     return [vid for vid in batch['vid'] if not is_file_present(v_feat_dir, vid)]
 
 
+def read_pending_files_from_directory(directory_path):
+    return [os.path.splitext(f)[0] for f in os.listdir(directory_path)
+            if os.path.isfile(os.path.join(directory_path, f))
+            and not is_file_present(v_feat_dir, os.path.splitext(f)[0])]
+
+
 def save_query_features(batch, batch_result, q_feat_dir, training=True):
     for i, result in enumerate(batch_result):
         qid = batch["qid"][i]
@@ -120,7 +126,6 @@ def save_video_features(batch, batch_result, v_feat_dir):
         v_feat_path = join(v_feat_dir, f"{vid}.npz")
         print("Saving:", v_feat_path)
         np.savez_compressed(v_feat_path, features=result.cpu())
-
 
 
 # write a code to check if a file is present in the directory
@@ -161,10 +166,20 @@ def extract_video_features(input_file):
         save_video_features(batch_vid, batch_result, v_feat_dir)
 
 
+def extract_pending_video_features():
+    batch_vid = read_pending_files_from_directory(v_input_dir)
+    if len(batch_vid) == 0:
+        print("All files present:", batch_vid)
+        return
+    print("Processing:", batch_vid)
+    batch_result = encode_video_query(v_input_dir, batch_vid)
+    # print(batch_result)
+    save_video_features(batch_vid, batch_result, v_feat_dir)
+
+
 def extract_train_video_features():
     input_file = "data/highlight_train_release.jsonl"
     extract_video_features(input_file)
-
 
 
 def extract_val_video_features():
@@ -194,7 +209,6 @@ def extract_train_query_features():
     extract_query_features(input_file, True)
 
 
-
 def extract_val_query_features():
     input_file = "data/highlight_val_release.jsonl"
     extract_query_features(input_file, False)
@@ -212,6 +226,7 @@ def extract_all_query_features():
     extract_train_video_features()
     extract_val_video_features()
     extract_test_video_features()
+    extract_pending_video_features()
 
 
 if __name__ == "__main__":

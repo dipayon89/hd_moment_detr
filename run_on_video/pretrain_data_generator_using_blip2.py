@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from os.path import join
 
@@ -71,7 +72,7 @@ def encode_video(input_dir: str, vid: str):
     video_path = join(input_dir, f"{vid}.mp4")
     video_frames, info = video_loader.read_raw_image_from_video_file(video_path)  # (T, H, W, 3)
     split = "train"
-    duration = info["duration"]
+    duration = math.floor(info["duration"])
     n_frames = len(video_frames)
     frame_duration = duration / n_frames
     start_duration = 0
@@ -79,7 +80,7 @@ def encode_video(input_dir: str, vid: str):
     for i in range(n_frames):
         qid = f"{vid}_{start_duration}_{start_duration + frame_duration}"
         image = vis_processors["eval"](video_frames[i]).unsqueeze(0).to(device)
-        query = model.generate({"image": image})
+        query = model.generate({"image": image})[0]
         relevant_windows = [[start_duration, start_duration + frame_duration]]
         start_duration += frame_duration
         dict_data = {
