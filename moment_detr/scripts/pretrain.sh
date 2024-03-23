@@ -1,17 +1,17 @@
 dset_name=hl
 ctx_mode=video_tef
-v_feat_types=slowfast_clip
-t_feat_types=clip
+v_feat_types=slowfast_clip_blip
+t_feat_types=clip_blip
 results_root=results
 exp_id=pt
 
 ######## data paths
-train_path=data/subs_train.jsonl
+train_path=data/pre_train_blip.jsonl
 eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
 ######## setup video+text features
-feat_root=features
+feat_root=../QVHighlights/features
 
 # video features
 v_feat_dim=0
@@ -24,16 +24,24 @@ if [[ ${v_feat_types} == *"clip"* ]]; then
   v_feat_dirs+=(${feat_root}/clip_features)
   (( v_feat_dim += 512 ))
 fi
+if [[ ${v_feat_types} == *"blip"* ]]; then
+  v_feat_dirs+=(${feat_root}/blip_video_features)
+  (( v_feat_dim += 768 ))
+fi
 
 # text features
 t_feat_dim=0
 t_feat_dirs=()
 if [[ ${t_feat_types} == *"clip"* ]]; then
-  t_feat_dirs+=(${feat_root}/clip_sub_features)
+  t_feat_dirs+=(${feat_root}/clip_pre_train_q_feat_dir)
   (( t_feat_dim += 512 ))  # double brackets for arithmetic op, no need to use ${v_feat_dim}
 fi
+if [[ ${t_feat_types} == *"blip"* ]]; then
+  t_feat_dirs+=(${feat_root}/blip_pre_train_q_feat_dir)
+  (( t_feat_dim += 768 ))
+fi
 
-echo "t_feat_dirs: "$t_feat_dirs
+#echo "t_feat_dirs: "$t_feat_dirs
 #### training
 bsz=256
 num_workers=8

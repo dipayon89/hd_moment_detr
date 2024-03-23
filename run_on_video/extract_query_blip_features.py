@@ -31,6 +31,7 @@ video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True)
 v_input_dir = "../QVHighlights/processed_videos/"
 v_feat_dir = "../QVHighlights/features/blip_video_features/"
 q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
+pre_train_q_feat_dir = "../QVHighlights/features/blip_pre_train_q_feat_dir"
 
 
 def encode_text_query(batch):
@@ -192,7 +193,7 @@ def extract_test_video_features():
     extract_video_features(input_file)
 
 
-def extract_query_features(input_file, training=True):
+def extract_query_features(input_file, feat_dir=q_feat_dir, training=True):
     dataset = QVHighlightsDataset(input_file)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
 
@@ -201,32 +202,38 @@ def extract_query_features(input_file, training=True):
         # print(batch_prompt)
         batch_result = encode_text_query(batch_query)
         # print(batch_result)
-        save_query_features(batch, batch_result, q_feat_dir, training=training)
+        save_query_features(batch, batch_result, feat_dir, training=training)
+
+
+def extract_pretrain_query_features():
+    input_file = "data/pre_train_blip.jsonl"
+    extract_query_features(input_file, pre_train_q_feat_dir,False)
 
 
 def extract_train_query_features():
     input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
-    extract_query_features(input_file, True)
+    extract_query_features(input_file, q_feat_dir, True)
 
 
 def extract_val_query_features():
     input_file = "data/highlight_val_release.jsonl"
-    extract_query_features(input_file, False)
+    extract_query_features(input_file, q_feat_dir,False)
 
 
 def extract_test_query_features():
     input_file = "data/highlight_test_release.jsonl"
-    extract_query_features(input_file, False)
+    extract_query_features(input_file, q_feat_dir,False)
 
 
 def extract_all_query_features():
-    extract_train_query_features()
-    extract_val_query_features()
-    extract_test_query_features()
-    extract_train_video_features()
-    extract_val_video_features()
-    extract_test_video_features()
-    extract_pending_video_features()
+    extract_pretrain_query_features()
+    # extract_train_query_features()
+    # extract_val_query_features()
+    # extract_test_query_features()
+    # extract_train_video_features()
+    # extract_val_video_features()
+    # extract_test_video_features()
+    # extract_pending_video_features()
 
 
 if __name__ == "__main__":

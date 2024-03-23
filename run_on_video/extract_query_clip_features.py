@@ -70,6 +70,20 @@ def collate_fn(batch):
     return collated_dict
 
 
+def extract_pretrain_query_features():
+    input_file = "../data/pre_train_blip.jsonl"
+    q_feat_dir = "../../QVHighlights/features/clip_pre_train_q_feat_dir"
+
+    dataset = QVHighlightsDataset(input_file)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=1, collate_fn=collate_fn)
+
+    for batch in tqdm(dataloader):
+        batch_query = generate_batched_query(batch)
+        # print(batch_prompt)
+        batch_result = feature_extractor.encode_text_query(batch_query)
+        # print(batch_result)
+        save_query_features(batch, batch_result, q_feat_dir, False)
+
 def extract_train_query_features():
     input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
     q_feat_dir = "../QVHighlights/features/clip_aug_text_features_openai"
@@ -114,9 +128,10 @@ def extract_test_query_features():
         save_query_features(batch, batch_result, q_feat_dir, False)
 
 def extract_all_query_features():
-    extract_train_query_features()
-    extract_val_query_features()
-    extract_test_query_features()
+    extract_pretrain_query_features()
+    # extract_train_query_features()
+    # extract_val_query_features()
+    # extract_test_query_features()
 
 if __name__ == "__main__":
     extract_all_query_features()

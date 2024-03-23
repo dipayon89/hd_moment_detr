@@ -97,7 +97,7 @@ class StartEndDataset(Dataset):
 
         if self.load_labels:
             model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
-            if "subs_train" not in self.data_path:
+            if "subs_train" not in self.data_path and "pre_train" not in self.data_path:
                 model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
                     self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
             else:
