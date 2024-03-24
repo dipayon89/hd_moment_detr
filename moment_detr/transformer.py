@@ -610,22 +610,22 @@ class VTCrossTransformer(nn.Module):
                                                  hidden_dim=d_model)
 
         # TransformerDecoderLayerThin
-        # decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
-        #                                           dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
-        # decoder_norm = nn.LayerNorm(d_model)
-        # self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
-        #                                     return_intermediate=return_intermediate_dec,
-        #                                     d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
-        #                                     query_scale_type=query_scale_type,
-        #                                     modulate_t_attn=modulate_t_attn,
-        #                                     bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
+        decoder_layer = VTTransformerDecoderLayer(d_model, nhead, dim_feedforward,
+                                                  dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
+        decoder_norm = nn.LayerNorm(d_model)
+        self.decoder = VTTransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
+                                            return_intermediate=return_intermediate_dec,
+                                            d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos,
+                                            query_scale_type=query_scale_type,
+                                            modulate_t_attn=modulate_t_attn,
+                                            bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
 
         
         # self.saliency_proj1 = nn.Linear(d_model, d_model)
         # self.saliency_proj2 = nn.Linear(d_model, d_model)
 
-        self.class_estimator = ClassPredictionHead(d_model, num_queries)
-        self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation)
+        # self.class_estimator = ClassPredictionHead(d_model, num_queries)
+        # self.localization_estimator = LocalizationPredictionHead(d_model, num_queries, activation=activation)
 
         self._reset_parameters()
 
@@ -667,21 +667,13 @@ class VTCrossTransformer(nn.Module):
                                                pos_txt=pos_embed_txt)  # (L, batch_size, d)
 
         memory_global, memory_local = memory[0], memory[1:]
-        # mask_local = mask[:, 1:]
-        # pos_embed_local = pos_embed[1:]
+        mask_local = mask[:, 1:]
+        pos_embed_local = pos_embed[1:]
 
-        # tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
-        # hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
-        #                               pos=pos_embed_local,
-        #                               refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
-
-
-
-        # hs = self.class_estimator(memory_global)
-        # references = self.localization_estimator(memory_global)
-
-        hs = self.class_estimator(memory)
-        references = self.localization_estimator(memory)
+        tgt = torch.zeros(refpoint_embed.shape[0], bs, d, device=src_vid.device)
+        hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
+                                      pos=pos_embed_local,
+                                      refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
 
         memory_local = memory_local.transpose(0, 1)  # (batch_size, L, d)
         return hs, references, memory_local, self.global_threshold(memory_global)

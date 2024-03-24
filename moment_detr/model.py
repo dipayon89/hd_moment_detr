@@ -59,8 +59,8 @@ class MomentDETR(nn.Module):
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
         span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
-        # self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        # self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+        self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
+        self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
@@ -125,13 +125,13 @@ class MomentDETR(nn.Module):
         # pad zeros for txt positions
         # pos = torch.cat([pos_vid, pos_txt], dim=1)
         # (#layers, bsz, #queries, d), (bsz, L_vid+L_txt, d)
-        outputs_class, outputs_coord, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(),
+        hs, reference, memory, memory_global = self.transformer(src_vid, src_txt, ~src_vid_mask.bool(),
                                                                 ~src_txt_mask.bool(),
                                                                 pos_vid, pos_txt, self.query_embed.weight)
-        # outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
-        # reference_before_sigmoid = inverse_sigmoid(reference)
-        # tmp = self.span_embed(hs)
-        # outputs_coord = tmp + reference_before_sigmoid
+        outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
+        reference_before_sigmoid = inverse_sigmoid(reference)
+        tmp = self.span_embed(hs)
+        outputs_coord = tmp + reference_before_sigmoid
         if self.span_loss_type == "l1":
             outputs_coord = outputs_coord.sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
@@ -148,8 +148,11 @@ class MomentDETR(nn.Module):
                 proj_vid_mem=proj_vid_mem
             ))
 
-        ### Neg Pairs ###
-        mixer = random.randint(1, bs-1)
+        ### Neg Relation Learning ###
+        if bs >= 4:
+            mixer = random.randint(1, bs - 1)
+        else:
+            mixer = 1
 
         src_txt_neg = torch.cat([src_txt[mixer:], src_txt[0:mixer]], dim=0)
         src_txt_mask_neg = torch.cat([src_txt_mask[mixer:], src_txt_mask[0:mixer]], dim=0)
@@ -157,10 +160,15 @@ class MomentDETR(nn.Module):
         pos_vid_neg = pos_vid.clone()
         pos_txt_neg = pos_txt.clone()
 
-        outputs_class_neg, outputs_coord_neg, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg, ~src_vid_mask.bool(),
-                                                               ~src_txt_mask_neg.bool(),
-                                                               pos_vid_neg, pos_txt_neg, self.query_embed.weight)
-
+        hs_neg, reference_neg, memory_neg, memory_global_neg = self.transformer(src_vid, src_txt_neg,
+                                                                                ~src_vid_mask.bool(),
+                                                                                ~src_txt_mask_neg.bool(),
+                                                                                pos_vid_neg, pos_txt_neg,
+                                                                                self.query_embed.weight)
+        outputs_class_neg = self.class_embed(hs_neg)  # (#layers, batch_size, #queries, #classes)
+        reference_before_sigmoid = inverse_sigmoid(reference_neg)
+        tmp = self.span_embed(hs_neg)
+        outputs_coord_neg = tmp + reference_before_sigmoid
         if self.span_loss_type == "l1":
             outputs_coord_neg = outputs_coord_neg.sigmoid()
         out.update({'pred_logits_neg': outputs_class_neg[-1], 'pred_spans_neg': outputs_coord_neg[-1]})
@@ -183,7 +191,9 @@ class MomentDETR(nn.Module):
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem
             out['aux_outputs'] = [
-                {'pred_logits': a, 'pred_spans': b} for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+                {'pred_logits': a, 'pred_spans': b, 'pred_logits_neg': c, 'pred_spans_neg': d}
+                for a, b, c, d in zip(outputs_class[:-1], outputs_coord[:-1],
+                                      outputs_class_neg[:-1], outputs_coord_neg[:-1])]
             if self.contrastive_align_loss:
                 assert proj_queries is not None
                 for idx, d in enumerate(proj_queries[:-1]):

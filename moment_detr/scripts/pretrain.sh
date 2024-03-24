@@ -3,7 +3,7 @@ ctx_mode=video_tef
 v_feat_types=slowfast_clip_blip
 t_feat_types=clip_blip
 results_root=results
-exp_id=pt
+exp_id=pt-qddec
 
 ######## data paths
 train_path=data/pre_train_blip.jsonl

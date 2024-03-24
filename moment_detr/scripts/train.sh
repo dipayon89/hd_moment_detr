@@ -4,12 +4,12 @@ v_feat_types=slowfast_clip_blip
 #v_feat_types=clip
 t_feat_types=clip_blip
 results_root=results
-exp_id=exp_blip_ce_serial_conv_prediction_head_openai
+exp_id=exp_blip_ce_qddec
 
 ######## data paths
-#train_path=data/highlight_train_release.jsonl
+train_path=data/highlight_train_release.jsonl
 #train_path=data/highlight_train_release_paraphrased.jsonl
-train_path=data/highlight_train_release_paraphrased_openai.jsonl
+#train_path=data/highlight_train_release_paraphrased_openai.jsonl
 eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
