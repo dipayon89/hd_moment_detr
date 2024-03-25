@@ -7,9 +7,9 @@ results_root=results
 exp_id=exp_blip_ce_serial_conv_prediction_head_openai_pt
 
 ######## data paths
-#train_path=data/highlight_train_release.jsonl
+train_path=data/highlight_train_release.jsonl
 #train_path=data/highlight_train_release_paraphrased.jsonl
-train_path=data/highlight_train_release_paraphrased_openai.jsonl
+#train_path=data/highlight_train_release_paraphrased_openai.jsonl
 eval_path=data/highlight_val_release.jsonl
 eval_split_name=val
 
@@ -54,7 +54,7 @@ echo ${t_feat_dirs[@]}
 #### training
 bsz=32
 n_epoch=200
-pretrain_path=results/hl-video_tef-pt-2024_03_23_09_58_04/model_best.ckpt
+pretrain_path=results/hl-video_tef-pt-2024_03_24_17_02_26/model_best.ckpt
 
 PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --dset_name ${dset_name} \

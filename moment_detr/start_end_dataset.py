@@ -29,7 +29,7 @@ class StartEndDataset(Dataset):
                  q_feat_type="last_hidden_state",
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
-                 clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0):
+                 clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0, dset_domain=None):
         self.dset_name = dset_name
         self.data_path = data_path
         self.data_ratio = data_ratio
@@ -58,6 +58,17 @@ class StartEndDataset(Dataset):
 
         # data
         self.data = self.load_data()
+
+        # load specific domain data for tvsum dataset
+        if self.dset_name == 'tvsum':
+            target_domain = dset_domain
+            assert target_domain in ["BK", "BT", "DS", "FM", "GA", "MS", "PK", "PR", "VT", "VU"]
+
+            new_data = []
+            for d in self.data:
+                if target_domain == d['domain']:
+                    new_data.append(d)
+            self.data = new_data
 
     def load_data(self):
         datalist = load_jsonl(self.data_path)
@@ -96,13 +107,19 @@ class StartEndDataset(Dataset):
                 model_inputs["video_feat"] = tef
 
         if self.load_labels:
-            model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
-            if "subs_train" not in self.data_path and "pre_train" not in self.data_path:
+            if self.dset_name == 'tvsum':
+                model_inputs["span_labels"] = torch.tensor([[0., 0.]])
+                meta_label = meta['label']
                 model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                    self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
+                            self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
             else:
-                model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                    self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l)  # only one gt
+                model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
+                if "subs_train" not in self.data_path and "pre_train" not in self.data_path:
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                        self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
+                else:
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l)  # only one gt
         return dict(meta=meta, model_inputs=model_inputs)
 
     def get_saliency_labels_sub_as_query(self, gt_window, ctx_l, max_n=2):
@@ -206,6 +223,22 @@ class StartEndDataset(Dataset):
         neg_clip_indices = hard_neg_clip_indices + easy_neg_clip_indices
         return pos_clip_indices, neg_clip_indices
 
+    def get_saliency_labels_all_tvsum(self, labels, ctx_l, max_n=1):
+
+        agg_scores = np.sum(labels - np.ones_like(labels), axis=-1)[:ctx_l]  # start from 1, so minus 1
+        score_array = agg_scores / 80 * 12
+        sort_indices = np.argsort(agg_scores)  # increasing
+
+        hard_pos_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(idx, ctx_l - 1) for idx in sort_indices[:max_n]]
+        easy_pos_clip_indices = []
+        easy_neg_clip_indices = []
+
+        pos_clip_indices = hard_pos_clip_indices + easy_pos_clip_indices
+        neg_clip_indices = hard_neg_clip_indices + easy_neg_clip_indices
+
+        return pos_clip_indices, neg_clip_indices, score_array
+
     def get_span_labels(self, windows, ctx_l):
         """
         windows: list([st, ed]) in seconds. E.g. [[26, 36]], corresponding st_ed clip_indices [[13, 17]] (inclusive)
@@ -229,9 +262,14 @@ class StartEndDataset(Dataset):
     def _get_query_feat_by_qid(self, qid, aug_id=0):
         aug = f"_{aug_id}" if aug_id > 0 else ""
         q_feat_list = []
+        q_feat_type = self.q_feat_type
         for _feat_dir in self.q_feat_dirs:
-            q_feat_path = join(_feat_dir, f"qid{qid}{aug}.npz")
-            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
+            if self.dset_name == "tvsum":
+                q_feat_path = join(_feat_dir, f"{qid}{aug}.npz")
+                q_feat_type = 'token'
+            else:
+                q_feat_path = join(_feat_dir, f"qid{qid}{aug}.npz")
+            q_feat = np.load(q_feat_path)[q_feat_type].astype(np.float32)
             if self.normalize_v:
                 q_feat = l2_normalize_np_array(q_feat)
             q_feat_list.append(q_feat)
@@ -254,17 +292,43 @@ class StartEndDataset(Dataset):
         return embeddings
 
     def _get_video_feat_by_vid(self, vid):
-        v_feat_list = []
-        for _feat_dir in self.v_feat_dirs:
-            _feat_path = join(_feat_dir, f"{vid}.npz")
-            _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
-            if self.normalize_v:
-                _feat = l2_normalize_np_array(_feat)
-            v_feat_list.append(_feat)
-        # some features are slightly longer than the others
-        min_len = min([len(e) for e in v_feat_list])
-        v_feat_list = [e[:min_len] for e in v_feat_list]
-        v_feat = np.concatenate(v_feat_list, axis=1)
+        if self.dset_name == 'tvsum':
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                if "blip" in _feat_dir:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
+                    if self.normalize_v:
+                        _feat = l2_normalize_np_array(_feat)
+                else:
+                    _feat_path = join(_feat_dir, f"{vid}_rgb.npy")
+                    _feat_rgb = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
+
+                    _feat_path = join(_feat_dir, f"{vid}_opt.npy")
+                    _feat_opt = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
+
+                    _feat = np.concatenate([_feat_rgb, _feat_opt], axis=-1)
+                    # _feat = _feat_rgb
+                    if self.normalize_v:
+                        _feat = l2_normalize_np_array(_feat)
+
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list]
+            v_feat = np.concatenate(v_feat_list, axis=1)
+        else:
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                _feat_path = join(_feat_dir, f"{vid}.npz")
+                _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
+                if self.normalize_v:
+                    _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list]
+            v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
 
 

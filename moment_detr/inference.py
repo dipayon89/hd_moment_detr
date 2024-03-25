@@ -45,7 +45,7 @@ def eval_epoch_post_processing(submission, opt, gt_data, save_submission_filenam
     submission_path = os.path.join(opt.results_dir, save_submission_filename)
     save_jsonl(submission, submission_path)
 
-    if opt.eval_split_name in ["val", "test"]:  # since test_public has no GT
+    if opt.eval_split_name in ["val"]:  # since test_public has no GT
         metrics = eval_submission(
             submission, gt_data,
             verbose=opt.debug, match_number=not opt.debug
@@ -81,6 +81,133 @@ def eval_epoch_post_processing(submission, opt, gt_data, save_submission_filenam
     else:
         metrics_nms = None
     return metrics, metrics_nms, latest_file_paths
+
+
+@torch.no_grad()
+def compute_hl_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb_writer=None):
+    model.eval()
+    if criterion:
+        assert eval_loader.dataset.load_labels
+        criterion.eval()
+
+    loss_meters = defaultdict(AverageMeter)
+    write_tb = tb_writer is not None and epoch_i is not None
+
+    mr_res = []
+
+    topk = 5  # top-5 map
+
+    video_ap_collected = []
+    for batch in tqdm(eval_loader, desc="compute st ed scores"):
+        query_meta = batch[0]
+
+        model_inputs, targets = prepare_batch_inputs(batch[1], opt.device, non_blocking=opt.pin_memory)
+
+        outputs = model(**model_inputs)
+
+        # loss meters
+        # if criterion:
+        #     loss_dict = criterion(outputs, targets)
+        #     weight_dict = criterion.weight_dict
+        # print(loss_dict)
+        # print(weight_dict)
+        # print('#######')
+        # {'loss_saliency': tensor(18.1374, device='cuda:0')}
+        # {'loss_span': 10, 'loss_giou': 1, 'loss_label': 4, 'loss_saliency': 1.0, 'loss_ms_align': 1.0,
+        #  'loss_distill': 1.0, 'loss_span_0': 10, 'loss_giou_0': 1, 'loss_label_0': 4, 'loss_ms_align_0': 1.0,
+        #  'loss_distill_0': 1.0}
+        # losses=0.
+        # print(loss_dict.keys(), weight_dict.keys())
+        # losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+        # loss_dict["loss_overall"] = float(losses)  # for logging only
+        # print(loss_dict.items())
+        #
+        # print(weight_dict.items())
+        # for k, v in loss_dict.items():
+        #     loss_meters[k].update(float(v) * weight_dict[k] if k in weight_dict else float(v))
+
+        preds = outputs['saliency_scores'].clone().detach()
+
+        for meta, pred in zip(query_meta, preds):
+            pred = pred
+            label = meta['label']  # raw label
+
+            video_ap = []
+            # Follow the UMT code "https://github.com/TencentARC/UMT/blob/main/datasets/tvsum.py"
+
+            if opt.dset_name in ["tvsum"]:
+                for i in range(20):
+                    pred = pred.cpu()
+                    cur_pred = pred[:len(label)]
+                    inds = torch.argsort(cur_pred, descending=True, dim=-1)
+
+                    # video_id = self.get_video_id(idx)
+                    cur_label = torch.Tensor(label)[:, i]
+                    cur_label = torch.where(cur_label > cur_label.median(), 1.0, .0)
+
+                    cur_label = cur_label[inds].tolist()[:topk]
+
+                    # if (num_gt := sum(cur_label)) == 0:
+                    num_gt = sum(cur_label)
+                    if num_gt == 0:
+                        video_ap.append(0)
+                        continue
+
+                    hits = ap = rec = 0
+                    prc = 1
+
+                    for j, gt in enumerate(cur_label):
+                        hits += gt
+
+                        _rec = hits / num_gt
+                        _prc = hits / (j + 1)
+
+                        ap += (_rec - rec) * (prc + _prc) / 2
+                        rec, prc = _rec, _prc
+
+                    video_ap.append(ap)
+
+            elif opt.dset_name in ["youtube_uni"]:
+                cur_pred = pred[:len(label)]
+                # if opt.dset_name == "tvsum_sfc":
+                cur_pred = cur_pred.cpu()
+                inds = torch.argsort(cur_pred, descending=True, dim=-1)
+
+                cur_label = torch.Tensor(label).squeeze()[inds].tolist()
+
+                num_gt = sum(cur_label)
+                if num_gt == 0:
+                    video_ap.append(0)
+                    continue
+
+                hits = ap = rec = 0
+                prc = 1
+
+                for j, gt in enumerate(cur_label):
+                    hits += gt
+
+                    _rec = hits / num_gt
+                    _prc = hits / (j + 1)
+
+                    ap += (_rec - rec) * (prc + _prc) / 2
+                    rec, prc = _rec, _prc
+
+                video_ap.append(float(ap))
+            else:
+                print("No such dataset")
+                exit(-1)
+
+            video_ap_collected.append(video_ap)
+
+    mean_ap = np.mean(video_ap_collected)
+    submmission = dict(mAP=round(mean_ap, 5))
+
+    # tensorboard writer
+    if write_tb and criterion:
+        for k, v in loss_meters.items():
+            tb_writer.add_scalar("Eval/{}".format(k), v.avg, epoch_i + 1)
+
+    return submmission, loss_meters
 
 
 @torch.no_grad()
@@ -160,7 +287,8 @@ def compute_mr_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
 
 def get_eval_res(model, eval_loader, opt, epoch_i, criterion, tb_writer):
     """compute and save query and video proposal embeddings"""
-    eval_res, eval_loss_meters = compute_mr_results(model, eval_loader, opt, epoch_i, criterion, tb_writer)  # list(dict)
+    eval_res, eval_loss_meters = compute_mr_results(model, eval_loader, opt, epoch_i, criterion,
+                                                    tb_writer)  # list(dict)
     return eval_res, eval_loss_meters
 
 
@@ -181,12 +309,26 @@ def eval_epoch(model, eval_dataset, opt, save_submission_filename, epoch_i=None,
         pin_memory=opt.pin_memory
     )
 
-    submission, eval_loss_meters = get_eval_res(model, eval_loader, opt, epoch_i, criterion, tb_writer)
-    if opt.no_sort_results:
-        save_submission_filename = save_submission_filename.replace(".jsonl", "_unsorted.jsonl")
-    metrics, metrics_nms, latest_file_paths = eval_epoch_post_processing(
-        submission, opt, eval_dataset.data, save_submission_filename)
-    return metrics, metrics_nms, eval_loss_meters, latest_file_paths
+    # tvsum
+    if opt.dset_name in ['tvsum']:
+        metrics, eval_loss_meters = compute_hl_results(model, eval_loader, opt, epoch_i, criterion, tb_writer)
+
+        # to match original save format
+        submission = [
+            {"brief": metrics}
+        ]
+        submission_path = os.path.join(opt.results_dir, "latest_metric.jsonl")
+        save_jsonl(submission, submission_path)
+
+        return submission[0], submission[0], eval_loss_meters, [submission_path]
+
+    else:
+        submission, eval_loss_meters = get_eval_res(model, eval_loader, opt, epoch_i, criterion, tb_writer)
+        if opt.no_sort_results:
+            save_submission_filename = save_submission_filename.replace(".jsonl", "_unsorted.jsonl")
+        metrics, metrics_nms, latest_file_paths = eval_epoch_post_processing(
+            submission, opt, eval_dataset.data, save_submission_filename)
+        return metrics, metrics_nms, eval_loss_meters, latest_file_paths
 
 
 def setup_model(opt):
@@ -217,9 +359,19 @@ def setup_model(opt):
     return model, criterion, optimizer, lr_scheduler
 
 
-def start_inference():
+def start_inference(opt=None, split=None, splitfile=None):
     logger.info("Setup config, data and model...")
     opt = TestOptions().parse()
+
+    if split is not None:
+        opt.eval_split_name = split
+    if splitfile is not None:
+        opt.eval_path = splitfile
+
+    print(opt.eval_split_name)
+    print(opt.eval_path)
+    logger.info("Setup config, data and model...")
+
     cudnn.benchmark = True
     cudnn.deterministic = False
 
@@ -240,7 +392,8 @@ def start_inference():
         max_windows=opt.max_windows,
         load_labels=(opt.eval_split_name == "val"),
         span_loss_type=opt.span_loss_type,
-        txt_drop_ratio=0
+        txt_drop_ratio=0,
+        dset_domain=opt.dset_domain,
     )
 
     model, criterion, _, _ = setup_model(opt)
