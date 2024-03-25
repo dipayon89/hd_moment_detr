@@ -33,7 +33,7 @@ lr=1e-3
 ######## TVSUM domain name
 for dset_domain in BK BT DS FM GA MS PK PR VT VU
 do
-    for seed in 0 1 2 3 2017
+    for seed in 0 1 2 3 2018
     do
         PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
         --dset_name ${dset_name} \
@@ -47,9 +47,9 @@ do
         --t_feat_dim ${t_feat_dim} \
         --bsz ${bsz} \
         --results_root ${results_root}/${dset_domain} \
-        --exp_id ${exp_id} \
+        --exp_id ${exp_id}_$seed \
         --max_v_l 1000 \
-        --n_epoch 1500 \
+        --n_epoch 2000 \
         --lr_drop 2000 \
         --max_es_cnt -1 \
         --seed $seed \
