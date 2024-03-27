@@ -3,7 +3,7 @@ ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
 results_root=results_tvsum
-exp_id=exp-qddec
+exp_id=exp-qddec-3000
 
 
 ######## data paths
@@ -33,7 +33,7 @@ lr=1e-3
 ######## TVSUM domain name
 for dset_domain in BK BT DS FM GA MS PK PR VT VU
 do
-    for seed in 0 1 2 3 2018
+    for seed in 0 1 1009 2017 2018
     do
         PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
         --dset_name ${dset_name} \
@@ -49,7 +49,7 @@ do
         --results_root ${results_root}/${dset_domain} \
         --exp_id ${exp_id}_$seed \
         --max_v_l 1000 \
-        --n_epoch 2000 \
+        --n_epoch 3000 \
         --lr_drop 2000 \
         --max_es_cnt -1 \
         --seed $seed \

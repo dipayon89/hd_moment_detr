@@ -17,21 +17,21 @@ from run_on_video.data_utils import VideoLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model, vis_processors, txt_processors = load_model_and_preprocess(name="blip2_feature_extractor",
-                                                                  model_type="pretrain", is_eval=True,
-                                                                  device=device)  # Blip2 featrures
+# model, vis_processors, txt_processors = load_model_and_preprocess(name="blip2_feature_extractor",
+#                                                                   model_type="pretrain", is_eval=True,
+#                                                                   device=device)  # Blip2 featrures
 
-# model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor",
-#                                                                   model_type="base", is_eval=True,
-#                                                                   device=device) # Blip featrures
+model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_feature_extractor",
+                                                                  model_type="base", is_eval=True,
+                                                                  device=device) # Blip featrures
 # text_input = txt_processors["eval"](caption)
 # sample = {"image": image, "text_input": [text_input]}
-video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True) # clip len 2 sec
+video_loader = VideoLoader(framerate=1, size=224, centercrop=True) # clip len 1 sec
 
-v_input_dir = "../QVHighlights/processed_videos/"
-v_feat_dir = "../QVHighlights/features/blip_video_features/"
-q_feat_dir = "../QVHighlights/features/blip_aug_text_features_openai"
-pre_train_q_feat_dir = "../QVHighlights/features/blip_pre_train_q_feat_dir"
+v_input_dir = "../Datasets/Charades_v1_480/"
+v_feat_dir = "../Datasets/processed/charades/blip_video_features/"
+q_feat_dir = "../Datasets/processed/charades/blip_text_features/"
+#pre_train_q_feat_dir = "../QVHighlights/features/blip_pre_train_q_feat_dir"
 
 
 def encode_text_query(batch):
@@ -45,7 +45,7 @@ def encode_text_query(batch):
         return batch_output
 
 
-def encode_video_query(input_dir, batch):
+def encode_video_query(input_dir, batch, out_dir=v_feat_dir):
     batch_output = []
     with torch.no_grad():
         for vid in tqdm(batch):
@@ -53,7 +53,7 @@ def encode_video_query(input_dir, batch):
             # print("video_path", video_path)
             video_feature = encode_video(video_path)
             batch_output.append(video_feature)
-        return batch_output
+            save_video_feature(vid, video_feature, out_dir)
 
 
 @torch.no_grad()
@@ -124,9 +124,13 @@ def save_query_features(batch, batch_result, q_feat_dir, training=True):
 def save_video_features(batch, batch_result, v_feat_dir):
     for i, result in enumerate(batch_result):
         vid = batch[i]
-        v_feat_path = join(v_feat_dir, f"{vid}.npz")
-        print("Saving:", v_feat_path)
-        np.savez_compressed(v_feat_path, features=result.cpu())
+        save_video_feature(vid, result, v_feat_dir)
+
+
+def save_video_feature(vid, result, v_feat_dir):
+    v_feat_path = join(v_feat_dir, f"{vid}.npz")
+    print("\nSaving: ", v_feat_path)
+    np.savez_compressed(v_feat_path, features=result.cpu())
 
 
 # write a code to check if a file is present in the directory
@@ -162,9 +166,7 @@ def extract_video_features(input_file):
             print("All files present:", batch_vid)
             continue
         print("Processing:", batch_vid)
-        batch_result = encode_video_query(v_input_dir, batch_vid)
-        # print(batch_result)
-        save_video_features(batch_vid, batch_result, v_feat_dir)
+        encode_video_query(v_input_dir, batch_vid)
 
 
 def extract_pending_video_features():
@@ -173,9 +175,7 @@ def extract_pending_video_features():
         print("All files present:", batch_vid)
         return
     print("Processing:", batch_vid)
-    batch_result = encode_video_query(v_input_dir, batch_vid)
-    # print(batch_result)
-    save_video_features(batch_vid, batch_result, v_feat_dir)
+    encode_video_query(v_input_dir, batch_vid)
 
 
 def extract_train_video_features():
@@ -205,35 +205,35 @@ def extract_query_features(input_file, feat_dir=q_feat_dir, training=True):
         save_query_features(batch, batch_result, feat_dir, training=training)
 
 
-def extract_pretrain_query_features():
-    input_file = "data/pre_train_blip.jsonl"
-    extract_query_features(input_file, pre_train_q_feat_dir,False)
+# def extract_pretrain_query_features():
+#     input_file = "data/pre_train_blip.jsonl"
+#     extract_query_features(input_file, pre_train_q_feat_dir,False)
 
 
 def extract_train_query_features():
-    input_file = "data/highlight_train_release_paraphrased_openai.jsonl"
-    extract_query_features(input_file, q_feat_dir, True)
+    input_file = "data/charades_sta/charades_sta_train_tvr_format.jsonl"
+    extract_query_features(input_file, q_feat_dir, False)
 
 
 def extract_val_query_features():
-    input_file = "data/highlight_val_release.jsonl"
+    input_file = "data/charades_sta/charades_sta_test_tvr_format.jsonl"
     extract_query_features(input_file, q_feat_dir,False)
 
 
-def extract_test_query_features():
-    input_file = "data/highlight_test_release.jsonl"
-    extract_query_features(input_file, q_feat_dir,False)
+# def extract_test_query_features():
+#     input_file = "data/highlight_test_release.jsonl"
+#     extract_query_features(input_file, q_feat_dir,False)
 
 
 def extract_all_query_features():
-    extract_pretrain_query_features()
+    # extract_pretrain_query_features()
     # extract_train_query_features()
     # extract_val_query_features()
     # extract_test_query_features()
     # extract_train_video_features()
     # extract_val_video_features()
     # extract_test_video_features()
-    # extract_pending_video_features()
+    extract_pending_video_features()
 
 
 if __name__ == "__main__":

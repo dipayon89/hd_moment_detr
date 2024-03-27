@@ -21,10 +21,9 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", default="hl", type=str, choices=["hl", "tvsum"])
-        parser.add_argument("--dset_domain", type=str,
-                            choices=["BK", "BT", "DS", "FM", "GA", "MS", "PK", "PR", "VT", "VU"],
-                            help="Domain to train for tvsum dataset. (Only used for tvsum)")
+        parser.add_argument("--dset_name", default="hl", type=str, choices=['hl', 'tvsum', 'charadesSTA'])
+        parser.add_argument("--dset_domain", type=str, default='BK',
+                            help="Domain to train for tvsum/youtube-hl dataset.")
         parser.add_argument("--eval_split_name", type=str, default="val",
                             help="should match keys in video_duration_idx_path, must set for VCMR")
         parser.add_argument("--debug", action="store_true",
@@ -64,8 +63,8 @@ class BaseOptions(object):
 
         # Data config
         parser.add_argument("--max_q_l", type=int, default=32)
-        parser.add_argument("--max_v_l", type=int, default=75)
-        parser.add_argument("--clip_length", type=int, default=2)
+        parser.add_argument("--max_v_l", type=int, default=-1)
+        parser.add_argument("--clip_length", type=int, default=1)
         parser.add_argument("--max_windows", type=int, default=5)
 
         parser.add_argument("--train_path", type=str, default="data/highlight_train_release_paraphrased.jsonl")

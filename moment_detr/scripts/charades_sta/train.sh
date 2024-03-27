@@ -1,7 +1,7 @@
 dset_name=charadesSTA
 ctx_mode=video_tef
-v_feat_types=slowfast_clip
-t_feat_type=clip 
+v_feat_types=slowfast_clip_blip
+t_feat_types=clip_blip
 results_root=results_charadesSTA
 exp_id=exp
 
@@ -11,7 +11,7 @@ eval_path=data/charades_sta/charades_sta_test_tvr_format.jsonl
 eval_split_name=val
 
 ######## setup video+text features
-feat_root=../features/charades
+feat_root=../Datasets/processed/charades
 
 # video features
 v_feat_dim=0
@@ -24,31 +24,32 @@ if [[ ${v_feat_types} == *"clip"* ]]; then
   v_feat_dirs+=(${feat_root}/clip_features)
   (( v_feat_dim += 512 ))
 fi
+if [[ ${v_feat_types} == *"blip"* ]]; then
+  v_feat_dirs+=(${feat_root}/blip_video_features)
+  (( v_feat_dim += 768 ))
+fi
 
 # text features
-if [[ ${t_feat_type} == "clip" ]]; then
-  t_feat_dir=${feat_root}/clip_text_features/
-  t_feat_dim=512
-else
-  echo "Wrong arg for t_feat_type."
-  exit 1
+t_feat_dim=0
+t_feat_dirs=()
+if [[ ${t_feat_types} == *"clip"* ]]; then
+  t_feat_dirs+=(${feat_root}/clip_text_features)
+  (( t_feat_dim += 512 ))  # double brackets for arithmetic op, no need to use ${v_feat_dim}
 fi
+if [[ ${t_feat_types} == *"blip"* ]]; then
+  t_feat_dirs+=(${feat_root}/blip_text_features)
+  (( t_feat_dim += 768 ))
+fi
+
+echo $t_feat_dim
+echo ${t_feat_dirs[@]}
 
 #### training
 bsz=32
 eval_bsz=32
-num_dummies=45
-num_prompts=2
-total_prompts=10
 lr_drop=400
-enc_layers=3
-dec_layers=3
-t2v_layers=2
-dummy_layers=2
-moment_layers=1
-sent_layers=1
 
-PYTHONPATH=$PYTHONPATH:. python cg_detr/train.py \
+PYTHONPATH=$PYTHONPATH:. python moment_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
 --train_path ${train_path} \
@@ -56,7 +57,7 @@ PYTHONPATH=$PYTHONPATH:. python cg_detr/train.py \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
 --v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
+--t_feat_dirs ${t_feat_dirs[@]} \
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
@@ -68,14 +69,5 @@ PYTHONPATH=$PYTHONPATH:. python cg_detr/train.py \
 --n_epoch 200 \
 --contrastive_align_loss_coef 0.002 \
 --lw_saliency 4 \
---enc_layers ${enc_layers} \
---dec_layers ${dec_layers} \
---t2v_layers ${t2v_layers} \
---moment_layers ${moment_layers} \
---dummy_layers ${dummy_layers} \
---sent_layers ${sent_layers} \
 --eval_bsz ${eval_bsz} \
---num_dummies ${num_dummies} \
---num_prompts ${num_prompts} \
---total_prompts ${total_prompts} \
 ${@:1}

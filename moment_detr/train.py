@@ -357,7 +357,7 @@ def start_training():
     logger.info("Start Training...")
     # train(model, criterion, optimizer, lr_scheduler, train_dataset, eval_dataset, opt)
     # For tvsum dataset, use train_hl function
-    if opt.dset_name in ['tvsum']:
+    if opt.dset_name in ['tvsum', 'youtube_uni']:
         train_hl(model, criterion, optimizer, lr_scheduler, train_dataset, eval_dataset, opt)
     else:
         train(model, criterion, optimizer, lr_scheduler, train_dataset, eval_dataset, opt)

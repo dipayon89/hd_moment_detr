@@ -27,7 +27,7 @@ model, vis_processors, txt_processors = load_model_and_preprocess(name="blip_fea
 
 # text_input = txt_processors["eval"](caption)
 # sample = {"image": image, "text_input": [text_input]}
-video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True)
+video_loader = VideoLoader(framerate=0.5, size=224, centercrop=True) # clip len 2 sec
 
 v_input_dir = "../Datasets/tvsum50_ver_1_1/ydata-tvsum50-v1_1/ydata-tvsum50-video/video/"
 v_feat_dir = "../Datasets/processed/tvsum/video_features_blip/"

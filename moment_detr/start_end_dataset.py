@@ -110,33 +110,49 @@ class StartEndDataset(Dataset):
             if self.dset_name == 'tvsum':
                 model_inputs["span_labels"] = torch.tensor([[0., 0.]])
                 meta_label = meta['label']
-                model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                            self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
+                model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                    "saliency_all_labels"] = \
+                    self.get_saliency_labels_all_tvsum(meta_label, ctx_l)
             else:
                 model_inputs["span_labels"] = self.get_span_labels(meta["relevant_windows"], ctx_l)  # (#windows, 2)
-                if "subs_train" not in self.data_path and "pre_train" not in self.data_path:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
+                if self.dset_name in ['charadesSTA', 'tacos', 'activitynet']:  ## charades, tacos, nlq
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"],
+                                                              ctx_l)  # only one gt
+                elif "subs_train" not in self.data_path and "pre_train" not in self.data_path:
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
                         self.get_saliency_labels_all(meta["relevant_clip_ids"], meta["saliency_scores"], ctx_l)
                 else:
-                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs["saliency_all_labels"] = \
-                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], ctx_l)  # only one gt
+                    model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
+                        "saliency_all_labels"] = \
+                        self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"],
+                                                              ctx_l)  # only one gt
         return dict(meta=meta, model_inputs=model_inputs)
 
-    def get_saliency_labels_sub_as_query(self, gt_window, ctx_l, max_n=2):
-        gt_st = int(gt_window[0] / self.clip_len)
-        gt_ed = max(0, min(int(gt_window[1] / self.clip_len), ctx_l) - 1)
+    def get_saliency_labels_sub_as_query(self, gt_window, duration, ctx_l, max_n=2):
+        clip_len = duration / ctx_l
+        gt_st = int(gt_window[0] / clip_len)
+        gt_ed = max(0, min(int(gt_window[1] / clip_len), ctx_l) - 1)
         if gt_st > gt_ed:
             gt_st = gt_ed
 
         if gt_st != gt_ed:
             pos_clip_indices = random.sample(range(gt_st, gt_ed + 1), k=max_n)
         else:
-            pos_clip_indices = [gt_st, gt_st]
+            if self.dset_name == 'nlq':
+                pos_clip_indices = [gt_st] * 2
+            else:
+                pos_clip_indices = [gt_st, gt_st]
 
         neg_pool = list(range(0, gt_st)) + list(range(gt_ed + 1, ctx_l))
-        neg_clip_indices = random.sample(neg_pool, k=max_n)
-        # return pos_clip_indices, neg_clip_indices
+        try:
+            neg_clip_indices = random.sample(neg_pool, k=max_n)
+        except:
+            neg_clip_indices = pos_clip_indices
 
+        # For charades_sta
         score_array = np.zeros(ctx_l)
         score_array[gt_st:gt_ed + 1] = 1
 
@@ -171,8 +187,8 @@ class StartEndDataset(Dataset):
         # indices in the whole video
         # the min(_, ctx_l-1) here is incorrect, but should not cause
         # much troubles since this should be rarely used.
-        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -206,8 +222,8 @@ class StartEndDataset(Dataset):
         # indices in the whole video
         # the min(_, ctx_l-1) here is incorrect, but should not cause
         # much troubles since this should be rarely used.
-        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[-max_n:]]
-        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l-1) for idx in sort_indices[:max_n]]
+        hard_pos_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[-max_n:]]
+        hard_neg_clip_indices = [min(rel_clip_ids[idx], ctx_l - 1) for idx in sort_indices[:max_n]]
         easy_pos_clip_indices = []
         easy_neg_clip_indices = []
         if add_easy_negative:
@@ -320,8 +336,12 @@ class StartEndDataset(Dataset):
         else:
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
-                _feat_path = join(_feat_dir, f"{vid}.npz")
-                _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
+                try:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
+                except:
+                    _feat_path = join(_feat_dir, f"{vid}.npy")
+                    _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
                 if self.normalize_v:
                     _feat = l2_normalize_np_array(_feat)
                 v_feat_list.append(_feat)

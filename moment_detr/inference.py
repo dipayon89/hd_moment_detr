@@ -223,7 +223,9 @@ def compute_mr_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
     mr_res = []
     for batch in tqdm(eval_loader, desc="compute st ed scores"):
         query_meta = batch[0]
+
         model_inputs, targets = prepare_batch_inputs(batch[1], opt.device, non_blocking=opt.pin_memory)
+
         outputs = model(**model_inputs)
         prob = F.softmax(outputs["pred_logits"], -1)  # (batch_size, #queries, #classes=2)
         if opt.span_loss_type == "l1":
@@ -237,7 +239,6 @@ def compute_mr_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
         else:
             bsz, n_queries = outputs["pred_spans"].shape[:2]  # # (bsz, #queries, max_v_l *2)
             pred_spans_logits = outputs["pred_spans"].view(bsz, n_queries, 2, opt.max_v_l)
-            # TODO use more advanced decoding method with st_ed product
             pred_span_scores, pred_spans = F.softmax(pred_spans_logits, dim=-1).max(-1)  # 2 * (bsz, #queries, 2)
             scores = torch.prod(pred_span_scores, 2)  # (bsz, #queries)
             pred_spans[:, 1] += 1
@@ -247,6 +248,7 @@ def compute_mr_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
         for idx, (meta, spans, score) in enumerate(zip(query_meta, pred_spans.cpu(), scores.cpu())):
             if opt.span_loss_type == "l1":
                 spans = span_cxw_to_xx(spans) * meta["duration"]
+                spans = torch.clamp(spans, 0, meta["duration"])
             # # (#queries, 3), [st(float), ed(float), score(float)]
             cur_ranked_preds = torch.cat([spans, score[:, None]], dim=1).tolist()
             if not opt.no_sort_results:
@@ -276,11 +278,32 @@ def compute_mr_results(model, eval_loader, opt, epoch_i=None, criterion=None, tb
         for k, v in loss_meters.items():
             tb_writer.add_scalar("Eval/{}".format(k), v.avg, epoch_i + 1)
 
-    post_processor = PostProcessorDETR(
-        clip_length=2, min_ts_val=0, max_ts_val=150,
-        min_w_l=2, max_w_l=150, move_window_method="left",
-        process_func_names=("clip_ts", "round_multiple")
-    )
+    if opt.dset_name in ['hl']:
+        post_processor = PostProcessorDETR(
+            clip_length=opt.clip_length, min_ts_val=0, max_ts_val=150,
+            min_w_l=2, max_w_l=150, move_window_method="left",
+            process_func_names=("clip_ts", "round_multiple")
+        )
+    elif opt.dset_name in ['charadesSTA']:
+        if opt.v_feat_dim == 4096: # vgg
+            post_processor = PostProcessorDETR(
+                clip_length=opt.clip_length, min_ts_val=0, max_ts_val=360,
+                min_w_l=12, max_w_l=360, move_window_method="left",
+                process_func_names=("clip_ts", "round_multiple")
+            )
+        else:
+            post_processor = PostProcessorDETR(
+                clip_length=opt.clip_length, min_ts_val=0, max_ts_val=150,
+                min_w_l=2, max_w_l=60, move_window_method="left",
+                process_func_names=("clip_ts", "round_multiple")
+            )
+    else:
+        post_processor = PostProcessorDETR(
+            clip_length=opt.clip_length, min_ts_val=0, max_ts_val=50000,
+            min_w_l=0, max_w_l=50000, move_window_method="left",
+            process_func_names=(["round_multiple"])
+        )
+
     mr_res = post_processor(mr_res)
     return mr_res, loss_meters
 
@@ -324,6 +347,14 @@ def eval_epoch(model, eval_dataset, opt, save_submission_filename, epoch_i=None,
 
     else:
         submission, eval_loss_meters = get_eval_res(model, eval_loader, opt, epoch_i, criterion, tb_writer)
+
+        if opt.dset_name in ['charadesSTA', 'tacos', 'nlq']:
+            new_submission = []
+            for s in submission:
+                s.pop('pred_saliency_scores', None)
+                new_submission.append(s)
+            submission = new_submission
+
         if opt.no_sort_results:
             save_submission_filename = save_submission_filename.replace(".jsonl", "_unsorted.jsonl")
         metrics, metrics_nms, latest_file_paths = eval_epoch_post_processing(
